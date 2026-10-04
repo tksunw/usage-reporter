@@ -14,7 +14,7 @@ claude plugin test .              # runs every *.test.ts under the folder
 claude --plugin-dir .             # load the working copy for one session without installing
 ```
 
-There is no package.json, build step, or linter. `claude plugin test` has no single-test filter; it takes only a directory. The test kit comes from `claude-code/testing` and types from `claude-code`, both supplied by the Claude Code binary. `tsconfig.json` and `.claude-plugin/types/` are gitignored; do not commit them.
+There is no package.json, build step, or linter. `claude plugin test` has no single-test filter; it takes only a directory. The test kit comes from `claude-code/testing` and types from `claude-code`, both supplied by the Claude Code binary. CI (`.github/workflows/ci.yml`) installs the latest Claude Code and runs `validate` and `test` on every push to main and every PR; neither needs a login. `tsconfig.json` and `.claude-plugin/types/` are gitignored; do not commit them.
 
 ## Architecture
 
