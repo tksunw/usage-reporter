@@ -10,8 +10,17 @@ const BACKOFF_MS = 10 * 60_000 // after a 429
 /** One usage window. A weekly window with a `label` is scoped to that model family. */
 type Window = { kind: 'session' | 'weekly'; label?: string; percent: number; resetsAt?: string; at: string }
 
+/**
+ * Usage credits, in major units of `currency` (dollars, not cents). `limit` is null when no limit
+ * is set, and absent when one is set in a shape this mod does not know.
+ */
+type Credits = { enabled: boolean; used: number; limit?: number | null; currency?: string; at: string }
+
+/** Cloud session credits, in dollars. `resetsAt` is as the endpoint gives it: a reset or an expiry, unverified. */
+type CloudCredits = { used: number; limit?: number; currency: 'USD'; resetsAt?: string; at: string }
+
 /** The file, format version 1. `raw` is Anthropic's last response, unparsed; its shape is theirs. */
-type Report = { version: 1; at: string; windows: Window[]; raw?: unknown }
+type Report = { version: 1; at: string; windows: Window[]; credits?: Credits; cloudSessionCredits?: CloudCredits; raw?: unknown }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -32,7 +41,7 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
   const path = `${home}/${FILE}`
   const now = await $.clock.now()
   const at = new Date(now).toISOString()
-  const write = (windows: Window[], raw: unknown) => $.fs.write(path, JSON.stringify({ version: 1, at, windows, raw } satisfies Report))
+  const write = (rest: Omit<Report, 'version' | 'at'>) => $.fs.write(path, JSON.stringify({ version: 1, at, ...rest } satisfies Report))
 
   if (now >= Number((await $.store.get('nextFetchAt')) ?? 0)) {
     // Claim the slot before the call so a second session starting now skips it.
@@ -44,7 +53,7 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
         if (res.ok) {
           const raw: unknown = JSON.parse(res.text)
           const windows = fromUsage(raw, at)
-          if (windows.length > 0) return write(windows, raw)
+          if (windows.length > 0) return write({ windows, credits: fromCredits(raw, at), cloudSessionCredits: fromCloudCredits(raw, at), raw })
         }
         if (res.status === 429) await $.store.set('nextFetchAt', now + BACKOFF_MS)
       }
@@ -54,11 +63,12 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
   }
 
   // Inside the floor, or the call failed: the session and weekly percent Claude Code already holds
-  // for its status line, merged into the last report so the model-scoped windows stay.
+  // for its status line, merged into the last report so the model-scoped windows and credits stay.
   const latest = fromRateLimits(rateLimits ?? (await $.session.usage()).rateLimits, at)
   if (latest.length === 0) return
   const last = await $.fs.read(path).then(text => JSON.parse(text) as Partial<Report>, () => ({}) as Partial<Report>)
-  await write(merge(last.version === 1 ? (last.windows ?? []) : [], latest), last.raw)
+  const { windows = [], credits, cloudSessionCredits } = last.version === 1 ? last : ({} as Partial<Report>)
+  await write({ windows: merge(windows, latest), credits, cloudSessionCredits, raw: last.raw })
 }
 
 /** The usage response: `limits[]` when present, else the older `five_hour` / `seven_day` objects. */
@@ -80,6 +90,47 @@ function fromUsage(raw: any, at: string): Window[] {
     typeof raw?.[key]?.utilization === 'number' ? [{ kind, label, percent: raw[key].utilization, resetsAt: iso(raw[key].resets_at), at }] : []
   return [...older('five_hour', 'session'), ...older('seven_day', 'weekly'), ...older('seven_day_opus', 'weekly', 'Opus'), ...older('seven_day_sonnet', 'weekly', 'Sonnet')]
 }
+
+/** Credits from the usage response: `spend` when it parses, else `extra_usage`. Undefined when neither does. */
+function fromCredits(raw: any, at: string): Credits | undefined {
+  const spend = raw?.spend
+  const used = major(spend?.used)
+  if (used !== undefined) {
+    // A set limit mirrors `used`. A bare number is unseen; it would be read as minor units at `used`'s exponent.
+    const limit = spend.limit === null ? null : major(spend.limit, spend.used.exponent)
+    return { enabled: spend.enabled === true, used, limit, currency: text(spend.used.currency), at }
+  }
+
+  // Assumes `used_credits` and `monthly_limit` are minor units (cents) at `decimal_places`, 2 when
+  // absent. Seen for `monthly_limit` (10000 beside a `spend.limit` of 100.00); `used_credits` has
+  // only ever read 0.
+  const extra = raw?.extra_usage
+  const places = extra?.decimal_places ?? 2
+  const spent = major(extra?.used_credits, places)
+  if (spent === undefined) return undefined
+  const limit = extra.monthly_limit === null ? null : major(extra.monthly_limit, places)
+  return { enabled: extra.is_enabled === true, used: spent, limit, currency: text(extra.currency), at }
+}
+
+/**
+ * Cloud session credits, from `iguana_necktie`. That key is Anthropic's codename, matched to the
+ * credit by its amount. When they rename it this field goes absent, and the fix is the key here.
+ */
+function fromCloudCredits(raw: any, at: string): CloudCredits | undefined {
+  const grant = raw?.iguana_necktie
+  if (typeof grant?.used_dollars !== 'number') return undefined
+  const limit = typeof grant.limit_dollars === 'number' ? grant.limit_dollars : undefined
+  return { used: grant.used_dollars, limit, currency: 'USD', resetsAt: iso(grant.resets_at), at }
+}
+
+/** A money figure in major units: `{ amount_minor, exponent }`, or a bare number of minor units at `exponent`. */
+function major(value: any, exponent?: unknown): number | undefined {
+  const minor = typeof value === 'number' ? value : value?.amount_minor
+  const places = value?.exponent ?? exponent
+  return typeof minor === 'number' && typeof places === 'number' ? minor / 10 ** places : undefined
+}
+
+const text = (value: unknown) => (typeof value === 'string' ? value : undefined)
 
 /** The status line's figures: `five_hour` and `seven_day`, no model-scoped windows. */
 function fromRateLimits(rateLimits: readonly SessionRateLimit[], at: string): Window[] {

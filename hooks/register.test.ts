@@ -19,8 +19,15 @@ const MEASURE = {
   changed: ['rateLimits' as const],
 }
 
-// The world beneath the mod: a clock, a store, HOME, a file, and an endpoint that answers `status`.
+// The usage response with credits on, in both the shapes it carries them. `spend` is the one read.
+const SPEND = { used: { amount_minor: 1234, currency: 'USD', exponent: 2 }, limit: { amount_minor: 5000, currency: 'USD', exponent: 2 }, enabled: true }
+const EXTRA = { is_enabled: true, monthly_limit: 10000, used_credits: 250, currency: 'USD', decimal_places: 2 }
+const NECKTIE = { utilization: 0, resets_at: '2026-11-05T07:59:00+00:00', limit_dollars: 250, used_dollars: 12.5, remaining_dollars: 237.5, locked_reason: null }
+const CREDITS = { enabled: true, used: 12.34, limit: 50, currency: 'USD', at: '2026-10-03T18:00:00.000Z' }
+
+// The world beneath the mod: a clock, a store, HOME, a file, and an endpoint that answers `reply`.
 function world(on: On, status = 200, body: unknown = USAGE) {
+  const reply = { status, body }
   const seen = { fetches: [] as unknown[], writes: [] as { path: string; text: string }[] }
   mock.env(on, { HOME: '/home/t' })
   mock.store(on)
@@ -30,7 +37,7 @@ function world(on: On, status = 200, body: unknown = USAGE) {
   on('session.authorize', () => ({ value: { handle: 'h', kind: 'bearer' as const } }))
   on('http.fetch', (_$, e) => {
     seen.fetches.push(e)
-    return { value: { status, ok: status === 200, headers: {}, text: JSON.stringify(body) } }
+    return { value: { status: reply.status, ok: reply.status === 200, headers: {}, text: JSON.stringify(reply.body) } }
   })
   on('fs.write', (_$, e) => {
     seen.writes.push({ ...e })
@@ -41,7 +48,7 @@ function world(on: On, status = 200, body: unknown = USAGE) {
     return last ? { value: last.text } : { deny: 'ENOENT' }
   })
   const file = () => JSON.parse(seen.writes.at(-1)!.text)
-  return { clock, file, ...seen }
+  return { clock, file, reply, ...seen }
 }
 
 const start = { cwd: '/w', surface: null, isInteractive: false }
@@ -112,4 +119,64 @@ test('the older response shape still yields windows', async ($, on) => {
     ['weekly', undefined, 14],
     ['weekly', 'Opus', 9],
   ])
+})
+
+test('credits come from spend, in major units', async ($, on) => {
+  const { file } = world(on, 200, { ...USAGE, spend: SPEND, extra_usage: EXTRA })
+  await $.session.start(start)
+  expect(file().credits).toEqual(CREDITS)
+})
+
+test('credits fall back to extra_usage, read as minor units', async ($, on) => {
+  const { file } = world(on, 200, { ...USAGE, extra_usage: EXTRA })
+  await $.session.start(start)
+  expect(file().credits).toEqual({ ...CREDITS, used: 2.5, limit: 100 })
+})
+
+test('no limit is null, a bare limit is minor units, an unknown limit is left out', async ($, on) => {
+  const { clock, file, reply } = world(on, 200, { ...USAGE, spend: { ...SPEND, limit: null, enabled: false } })
+  await $.session.start(start)
+  expect(file().credits).toEqual({ ...CREDITS, enabled: false, limit: null })
+
+  for (const [limit, expected] of [[5000, 50], ['unlimited', undefined]] as const) {
+    reply.body = { ...USAGE, spend: { ...SPEND, limit } }
+    await clock.advance(5 * 60_000)
+    await $.session.measure(MEASURE)
+    expect(file().credits.limit).toBe(expected)
+  }
+})
+
+test('credits carry over unchanged inside the floor and after a 429', async ($, on) => {
+  const { clock, fetches, file, reply } = world(on, 200, { ...USAGE, spend: SPEND })
+  await $.session.start(start)
+  await clock.advance(60_000)
+  await $.session.measure(MEASURE)
+  expect(fetches).toHaveLength(1)
+  expect(file().credits).toEqual(CREDITS)
+
+  reply.status = 429
+  await clock.advance(4 * 60_000)
+  await $.session.measure(MEASURE)
+  expect(fetches).toHaveLength(2)
+  expect(file().at).toBe('2026-10-03T18:05:00.000Z')
+  expect(file().credits).toEqual(CREDITS)
+})
+
+test('a response with no credit objects writes no credit fields', async ($, on) => {
+  const { file } = world(on)
+  await $.session.start(start)
+  expect('credits' in file()).toBe(false)
+  expect('cloudSessionCredits' in file()).toBe(false)
+})
+
+test('cloud session credits come from iguana_necktie and carry over inside the floor', async ($, on) => {
+  const { clock, file } = world(on, 200, { ...USAGE, iguana_necktie: NECKTIE })
+  const cloud = { used: 12.5, limit: 250, currency: 'USD', resetsAt: '2026-11-05T07:59:00.000Z', at: '2026-10-03T18:00:00.000Z' }
+  await $.session.start(start)
+  expect(file().cloudSessionCredits).toEqual(cloud)
+
+  await clock.advance(60_000)
+  await $.session.measure(MEASURE)
+  expect(file().at).toBe('2026-10-03T18:01:00.000Z')
+  expect(file().cloudSessionCredits).toEqual(cloud)
 })
