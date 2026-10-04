@@ -15,6 +15,16 @@ It writes `~/.claude/usage-reporter/usage.json`:
   ],
   "credits": { "enabled": false, "used": 0, "limit": null, "currency": "USD", "at": "2026-10-03T19:51:50.920Z" },
   "cloudSessionCredits": { "used": 0, "limit": 250, "currency": "USD", "resetsAt": "2026-11-05T07:59:00.000Z", "at": "2026-10-03T19:51:50.920Z" },
+  "weeklyBreakdown": {
+    "windowStartedAt": "2026-09-27T23:00:00.902Z",
+    "rows": [
+      { "key": "claude_code", "label": "Claude Code", "percent": 100 },
+      { "key": "chat", "label": "Chats", "percent": 0 },
+      { "key": "cowork", "label": "Cowork", "percent": 0 },
+      { "key": "other", "label": "Other", "percent": 0 }
+    ],
+    "at": "2026-10-03T19:51:50.920Z"
+  },
   "raw": {}
 }
 ```
@@ -57,7 +67,16 @@ Format version 1. A reader should check `version` and stop if it is not one it k
 | `cloudSessionCredits.currency` | `USD` |
 | `cloudSessionCredits.resetsAt` | The date the endpoint gives for the grant, ISO 8601 UTC. Whether it is a reset or an expiry is not confirmed. Can be absent |
 | `cloudSessionCredits.at` | When the figures were read. Can be older than the file's `at` |
+| `weeklyBreakdown` | The weekly window's usage split by surface, account-wide (claude.ai chat included). Absent when Anthropic's response does not carry it |
+| `weeklyBreakdown.windowStartedAt` | When the weekly window began, ISO 8601 UTC. Can be absent |
+| `weeklyBreakdown.rows[]` | One entry per surface, in Anthropic's order. Keys not listed here are passed through; show them rather than dropping them |
+| `weeklyBreakdown.rows[].key` | Surface id. Seen: `claude_code`, `chat`, `cowork`, `other` |
+| `weeklyBreakdown.rows[].label` | Anthropic's display name, for example `Chats`. Can be absent |
+| `weeklyBreakdown.rows[].percent` | See below. Not the percent of the weekly limit |
+| `weeklyBreakdown.at` | When the figures were read. Can be older than the file's `at` |
 | `raw` | Anthropic's last usage response, unparsed, for debugging. Its shape is theirs and changes without notice. Do not build on it |
+
+What `weeklyBreakdown.rows[].percent` measures is not settled. Every reading so far had one non-zero row, `claude_code` at 100, while the weekly window stood at 20% and later 43%. So it is not the weekly percent, and it fits "share of this week's usage, rows summing to 100", but no reading with two non-zero rows has confirmed that. Treat it as a relative share until one does.
 
 A window whose `resetsAt` has passed has rolled over; treat it as empty until the next report.
 
@@ -72,7 +91,7 @@ jq -r '.windows[] | "\(.kind) \(.label // "all") \(.percent)%"' ~/.claude/usage-
 Only while a Claude Code session is running. Nothing runs on a timer.
 
 - On session start, and whenever Claude Code reports that a limit moved, the mod has Claude Code call Anthropic's usage endpoint. At most one call per five minutes across all open sessions, ten minutes after a 429.
-- Between those calls it writes the session and weekly percent Claude Code already holds for its status line, merged into the last report. No request is made for those. Model-scoped windows, `credits`, and `cloudSessionCredits` come only from the endpoint, so they carry over unchanged until the next call.
+- Between those calls it writes the session and weekly percent Claude Code already holds for its status line, merged into the last report. No request is made for those. Model-scoped windows, `credits`, `cloudSessionCredits`, and `weeklyBreakdown` come only from the endpoint, so they carry over unchanged until the next call.
 - The status line figures trail the endpoint by about a point, so inside one window a lower reading never replaces a higher one.
 
 So session and weekly follow each turn, and model-scoped windows and credits update at most every five minutes. Usage from claude.ai chat or Claude Desktop shows up at the next Claude Code turn.
@@ -81,7 +100,7 @@ So session and weekly follow each turn, and model-scoped windows and credits upd
 
 - **Your login**: the mod never sees it. It calls `$.session.authorize()`, gets an opaque handle, and passes the handle to `$.http.fetch`. Claude Code attaches the credential on its side.
 - **Network**: one request, `GET https://api.anthropic.com/api/oauth/usage`, made by Claude Code. This is the call behind `/usage`.
-- **Files**: writes `~/.claude/usage-reporter/usage.json` and reads it back to merge. The file holds percentages, reset times, and credit figures. No token, no prompts.
+- **Files**: writes `~/.claude/usage-reporter/usage.json` and reads it back to merge. The file holds percentages, reset times, credit figures, and the per-surface split. No token, no prompts.
 - **Environment**: reads `HOME`.
 
 `claude plugin validate .` prints the same list from the source. The whole mod is `hooks/register.ts`.

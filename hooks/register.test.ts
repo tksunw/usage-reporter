@@ -23,6 +23,25 @@ const MEASURE = {
 const SPEND = { used: { amount_minor: 1234, currency: 'USD', exponent: 2 }, limit: { amount_minor: 5000, currency: 'USD', exponent: 2 }, enabled: true }
 const EXTRA = { is_enabled: true, monthly_limit: 10000, used_credits: 250, currency: 'USD', decimal_places: 2 }
 const NECKTIE = { utilization: 0, resets_at: '2026-11-05T07:59:00+00:00', limit_dollars: 250, used_dollars: 12.5, remaining_dollars: 237.5, locked_reason: null }
+// Captured live on 2026-10-03, plus a surface the mod has never seen.
+const BREAKDOWN = {
+  as_of: '2026-10-03T17:31:15.937959+00:00',
+  window_started_at: '2026-09-27T23:00:00.902388+00:00',
+  rows: [
+    { key: 'claude_code', display_name: 'Claude Code', percent: 100 },
+    { key: 'chat', display_name: 'Chats', percent: 0 },
+    { key: 'telescope', display_name: 'Telescope', percent: 0 },
+  ],
+}
+const WEEKLY = {
+  windowStartedAt: '2026-09-27T23:00:00.902Z',
+  rows: [
+    { key: 'claude_code', label: 'Claude Code', percent: 100 },
+    { key: 'chat', label: 'Chats', percent: 0 },
+    { key: 'telescope', label: 'Telescope', percent: 0 },
+  ],
+  at: '2026-10-03T18:00:00.000Z',
+}
 const CREDITS = { enabled: true, used: 12.34, limit: 50, currency: 'USD', at: '2026-10-03T18:00:00.000Z' }
 
 // The world beneath the mod: a clock, a store, HOME, a file, and an endpoint that answers `reply`.
@@ -167,6 +186,7 @@ test('a response with no credit objects writes no credit fields', async ($, on) 
   await $.session.start(start)
   expect('credits' in file()).toBe(false)
   expect('cloudSessionCredits' in file()).toBe(false)
+  expect('weeklyBreakdown' in file()).toBe(false)
 })
 
 test('cloud session credits come from iguana_necktie and carry over inside the floor', async ($, on) => {
@@ -179,4 +199,31 @@ test('cloud session credits come from iguana_necktie and carry over inside the f
   await $.session.measure(MEASURE)
   expect(file().at).toBe('2026-10-03T18:01:00.000Z')
   expect(file().cloudSessionCredits).toEqual(cloud)
+})
+
+test('the weekly breakdown is parsed on a fetch, unknown surfaces kept', async ($, on) => {
+  const { file } = world(on, 200, { ...USAGE, seven_day_breakdown: BREAKDOWN })
+  await $.session.start(start)
+  expect(file().weeklyBreakdown).toEqual(WEEKLY)
+})
+
+test('the weekly breakdown carries over inside the floor and after a 429', async ($, on) => {
+  const { clock, fetches, file, reply } = world(on, 200, { ...USAGE, seven_day_breakdown: BREAKDOWN })
+  await $.session.start(start)
+  await clock.advance(60_000)
+  await $.session.measure(MEASURE)
+  expect(file().at).toBe('2026-10-03T18:01:00.000Z')
+  expect(file().weeklyBreakdown).toEqual(WEEKLY)
+
+  reply.status = 429
+  await clock.advance(4 * 60_000)
+  await $.session.measure(MEASURE)
+  expect(fetches).toHaveLength(2)
+  expect(file().weeklyBreakdown).toEqual(WEEKLY)
+})
+
+test('a breakdown with no usable rows is left out', async ($, on) => {
+  const { file } = world(on, 200, { ...USAGE, seven_day_breakdown: { ...BREAKDOWN, rows: [{ key: 'chat' }, { percent: 5 }] } })
+  await $.session.start(start)
+  expect('weeklyBreakdown' in file()).toBe(false)
 })

@@ -29,8 +29,8 @@ Both swallow errors from `report()`. The mod must never break a session.
 
 `report()` has two paths:
 
-1. Fetch path. If `now >= nextFetchAt` (in `$.store`, shared across all open sessions), it claims the slot by writing `nextFetchAt = now + 5 min` before the call, then has Claude Code `GET https://api.anthropic.com/api/oauth/usage` using an opaque handle from `$.session.authorize()`. A parseable response replaces the whole file, `raw`, `credits`, and `cloudSessionCredits` included. A 429 pushes `nextFetchAt` to 10 minutes.
-2. Merge path. Inside the floor, or when the fetch fails, is refused, or yields no windows, it takes the `five_hour` / `seven_day` figures Claude Code already holds for its status line, reads the last file, and merges them in so model-scoped windows, `credits`, `cloudSessionCredits`, and `raw` survive. The credit objects keep their original `at`.
+1. Fetch path. If `now >= nextFetchAt` (in `$.store`, shared across all open sessions), it claims the slot by writing `nextFetchAt = now + 5 min` before the call, then has Claude Code `GET https://api.anthropic.com/api/oauth/usage` using an opaque handle from `$.session.authorize()`. A parseable response replaces the whole file, `raw`, `credits`, `cloudSessionCredits`, and `weeklyBreakdown` included. A 429 pushes `nextFetchAt` to 10 minutes.
+2. Merge path. Inside the floor, or when the fetch fails, is refused, or yields no windows, it takes the `five_hour` / `seven_day` figures Claude Code already holds for its status line, reads the last file, and merges them in so model-scoped windows, `credits`, `cloudSessionCredits`, `weeklyBreakdown`, and `raw` survive. Those objects keep their original `at`.
 
 Things that are easy to break:
 
@@ -40,6 +40,7 @@ Things that are easy to break:
 - `fromUsage()` handles two response shapes: the current `limits[]` (`session`, `weekly_all`, `weekly_scoped`) and the older `five_hour` / `seven_day` / `seven_day_opus` / `seven_day_sonnet` objects. The older shape is used only when `limits[]` yields no unlabeled window. The endpoint is undocumented, so shape changes get fixed here, not in readers.
 - `fromCredits()` reads `spend` (self-describing `amount_minor` + `exponent`) and falls back to `extra_usage`, read as minor units at `decimal_places` (seen for `monthly_limit`; `used_credits` has only ever read 0). Figures are written in major units. An unparseable limit is left out, never guessed; `null` means no limit.
 - `fromCloudCredits()` reads `raw.iguana_necktie`, an Anthropic codename mapped to `cloudSessionCredits` on 2026-10-04 on the strength of a matching $250 figure, not on anything Anthropic documents. If the field goes absent, look for a renamed key in `raw` first.
+- `fromBreakdown()` reads `raw.seven_day_breakdown` into `weeklyBreakdown`. Every row with a string `key` and numeric `percent` passes through, unknown keys included, so readers pick up new surfaces without a mod update. What `percent` means is unsettled (see the README); as of 2026-10-04 only readings with a single non-zero row (`claude_code` 100) exist, at weekly 20% and 43%, so it is not the weekly percent.
 - A change to the written JSON shape is a breaking change for readers; optional additive fields (like `credits`) are not. For a breaking change, bump `version` in the `Report` type and update the README table together.
 
 ## Tests
