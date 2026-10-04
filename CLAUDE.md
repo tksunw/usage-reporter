@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Claude Code mod (a plugin made of function hooks, requires Claude Code 2.1.288+) that writes the user's Claude usage limits and credits to `~/.claude/usage-reporter/usage.json`. Other tools (Tokenometer, status lines, scripts) read that file instead of each calling Anthropic. The file is the product: its shape is a public contract documented in `README.md` under "The file format".
+A Claude Code mod (a plugin made of function hooks, known to work on Claude Code 2.1.251 and later) that writes the user's Claude usage limits and credits to `~/.claude/usage-reporter/usage.json`. Other tools (Tokenometer, status lines, scripts) read that file instead of each calling Anthropic. The file is the product: its shape is a public contract documented in `README.md` under "The file format".
 
 ## Commands
 

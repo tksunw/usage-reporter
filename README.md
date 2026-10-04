@@ -31,7 +31,7 @@ It writes `~/.claude/usage-reporter/usage.json`:
 
 ## Install
 
-Requires a Claude Code version with mods (2.1.288 or later) and a Claude subscription login.
+Requires a Claude Code version with mods (known to work on 2.1.251 and later) and a Claude subscription login.
 
 ```bash
 git clone https://github.com/tksunw/usage-reporter ~/.claude/skills/usage-reporter

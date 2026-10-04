@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v5
 
       # Latest Claude Code, so a runtime change that breaks the mod shows up here
-      # before it shows up in someone's session. The mod needs 2.1.288 or later.
+      # before it shows up in someone's session. Known to work on 2.1.251 and later.
       - name: Install Claude Code
         run: |
           curl -fsSL https://claude.ai/install.sh | bash
