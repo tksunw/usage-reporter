@@ -19,6 +19,9 @@ type Credits = { enabled: boolean; used: number; limit?: number | null; currency
 /** Cloud session credits, in dollars. `resetsAt` is as the endpoint gives it: a reset or an expiry, unverified. */
 type CloudCredits = { used: number; limit?: number; currency: 'USD'; resetsAt?: string; at: string }
 
+/** The one-time Claude Projects setup credit, in dollars. It expires at `expiresAt`; it does not reset. */
+type SetupCredit = { used: number; limit?: number; currency: 'USD'; expiresAt?: string; at: string }
+
 /** The weekly window's usage by surface (Claude Code, chat, ...). Rows pass through as given, unknown keys included. */
 type Breakdown = { windowStartedAt?: string; rows: { key: string; label?: string; percent: number }[]; at: string }
 
@@ -29,6 +32,7 @@ type Report = {
   windows: Window[]
   credits?: Credits
   cloudSessionCredits?: CloudCredits
+  projectSetupCredit?: SetupCredit
   weeklyBreakdown?: Breakdown
   raw?: unknown
 }
@@ -64,7 +68,15 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
         if (res.ok) {
           const raw: unknown = JSON.parse(res.text)
           const windows = fromUsage(raw, at)
-          if (windows.length > 0) return write({ windows, credits: fromCredits(raw, at), cloudSessionCredits: fromCloudCredits(raw, at), weeklyBreakdown: fromBreakdown(raw, at), raw })
+          if (windows.length > 0)
+            return write({
+              windows,
+              credits: fromCredits(raw, at),
+              cloudSessionCredits: fromCloudCredits(raw, at),
+              projectSetupCredit: fromSetupCredit(raw, at),
+              weeklyBreakdown: fromBreakdown(raw, at),
+              raw,
+            })
         }
         if (res.status === 429) await $.store.set('nextFetchAt', now + BACKOFF_MS)
       }
@@ -78,8 +90,8 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
   const latest = fromRateLimits(rateLimits ?? (await $.session.usage()).rateLimits, at)
   if (latest.length === 0) return
   const last = await $.fs.read(path).then(text => JSON.parse(text) as Partial<Report>, () => ({}) as Partial<Report>)
-  const { windows = [], credits, cloudSessionCredits, weeklyBreakdown } = last.version === 1 ? last : ({} as Partial<Report>)
-  await write({ windows: merge(windows, latest), credits, cloudSessionCredits, weeklyBreakdown, raw: last.raw })
+  const { windows = [], credits, cloudSessionCredits, projectSetupCredit, weeklyBreakdown } = last.version === 1 ? last : ({} as Partial<Report>)
+  await write({ windows: merge(windows, latest), credits, cloudSessionCredits, projectSetupCredit, weeklyBreakdown, raw: last.raw })
 }
 
 /** The usage response: `limits[]` when present, else the older `five_hour` / `seven_day` objects. */
@@ -132,6 +144,17 @@ function fromCloudCredits(raw: any, at: string): CloudCredits | undefined {
   if (typeof grant?.used_dollars !== 'number') return undefined
   const limit = typeof grant.limit_dollars === 'number' ? grant.limit_dollars : undefined
   return { used: grant.used_dollars, limit, currency: 'USD', resetsAt: iso(grant.resets_at), at }
+}
+
+/**
+ * The Projects setup credit, from `harbor_lantern`, another codename. Matched on 2026-10-04 to the
+ * "Project setup credit" bar in Claude Desktop by its $100 limit, used amount, and expiry time.
+ */
+function fromSetupCredit(raw: any, at: string): SetupCredit | undefined {
+  const grant = raw?.harbor_lantern
+  if (typeof grant?.used_dollars !== 'number') return undefined
+  const limit = typeof grant.limit_dollars === 'number' ? grant.limit_dollars : undefined
+  return { used: grant.used_dollars, limit, currency: 'USD', expiresAt: iso(grant.resets_at), at }
 }
 
 /** The weekly breakdown, from `seven_day_breakdown`. Rows without a string key and a numeric percent are dropped. */

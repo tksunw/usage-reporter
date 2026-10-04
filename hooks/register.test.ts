@@ -42,6 +42,8 @@ const WEEKLY = {
   ],
   at: '2026-10-03T18:00:00.000Z',
 }
+// Captured live on 2026-10-04 while a Project ran; Claude Desktop showed it as 18% used.
+const LANTERN = { utilization: 17.993769, resets_at: '2026-10-05T17:16:23.346348+00:00', limit_dollars: 100, used_dollars: 17.993769, remaining_dollars: 82.006231, locked_reason: null }
 const CREDITS = { enabled: true, used: 12.34, limit: 50, currency: 'USD', at: '2026-10-03T18:00:00.000Z' }
 
 // The world beneath the mod: a clock, a store, HOME, a file, and an endpoint that answers `reply`.
@@ -186,6 +188,7 @@ test('a response with no credit objects writes no credit fields', async ($, on) 
   await $.session.start(start)
   expect('credits' in file()).toBe(false)
   expect('cloudSessionCredits' in file()).toBe(false)
+  expect('projectSetupCredit' in file()).toBe(false)
   expect('weeklyBreakdown' in file()).toBe(false)
 })
 
@@ -225,5 +228,24 @@ test('the weekly breakdown carries over inside the floor and after a 429', async
 test('a breakdown with no usable rows is left out', async ($, on) => {
   const { file } = world(on, 200, { ...USAGE, seven_day_breakdown: { ...BREAKDOWN, rows: [{ key: 'chat' }, { percent: 5 }] } })
   await $.session.start(start)
+  expect('projectSetupCredit' in file()).toBe(false)
   expect('weeklyBreakdown' in file()).toBe(false)
+})
+
+test('the project setup credit comes from harbor_lantern, expires rather than resets, and carries over', async ($, on) => {
+  const { clock, file } = world(on, 200, { ...USAGE, harbor_lantern: LANTERN })
+  const setup = { used: 17.993769, limit: 100, currency: 'USD', expiresAt: '2026-10-05T17:16:23.346Z', at: '2026-10-03T18:00:00.000Z' }
+  await $.session.start(start)
+  expect(file().projectSetupCredit).toEqual(setup)
+
+  await clock.advance(60_000)
+  await $.session.measure(MEASURE)
+  expect(file().at).toBe('2026-10-03T18:01:00.000Z')
+  expect(file().projectSetupCredit).toEqual(setup)
+})
+
+test('a null harbor_lantern writes no project setup credit', async ($, on) => {
+  const { file } = world(on, 200, { ...USAGE, harbor_lantern: null })
+  await $.session.start(start)
+  expect('projectSetupCredit' in file()).toBe(false)
 })
