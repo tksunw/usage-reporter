@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v5
 
       # Latest Claude Code, so a runtime change that breaks the mod shows up here
-      # before it shows up in someone's session. Known to work on 2.1.251 and later.
+      # before it shows up in someone's session. Anthropic supports mods on 2.1.287 and later; 2.1.251 is known to work.
       - name: Install Claude Code
         run: |
           curl -fsSL https://claude.ai/install.sh | bash
