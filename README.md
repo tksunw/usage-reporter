@@ -38,7 +38,7 @@ Requires a Claude Code version with mods (Anthropic supports mods on 2.1.287 and
 git clone https://github.com/tksunw/usage-reporter ~/.claude/skills/usage-reporter
 ```
 
-Start a new Claude Code session. The file appears after the session starts. To remove the mod, delete that folder.
+Start a new Claude Code session. The file appears after the session starts. To remove the mod, delete that folder; the last report stays in `~/.claude/usage-reporter/` until you delete that too.
 
 To try it for one session without installing: `claude --plugin-dir /path/to/usage-reporter`.
 
@@ -127,6 +127,8 @@ So session and weekly follow each turn, and model-scoped windows and credits upd
 claude plugin validate .
 claude plugin test .
 ```
+
+CI runs both on every push to main and every pull request, against the latest Claude Code.
 
 ## License
 
