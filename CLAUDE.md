@@ -20,10 +20,11 @@ There is no package.json, build step, or linter. `claude plugin test` has no sin
 
 The whole mod is `hooks/register.ts`. `hooks/hooks.json` points Claude Code at it and `.claude-plugin/plugin.json` is the manifest (bump `version` there on release).
 
-`register` hooks two events and both funnel into `report()`:
+`register` hooks three events and all funnel into `report()`:
 
 - `session.start`: reports after the session has started.
 - `session.measure`: reports only when `e.changed` includes `rateLimits`, using the rate limits carried on the event.
+- `turn.complete`: main conversation only (`e.agentId` unset), and only once the five-minute floor in the store has lapsed. A quiet stretch moves no whole point, so without this the file ages while the session is busy.
 
 Both swallow errors from `report()`. The mod must never break a session.
 

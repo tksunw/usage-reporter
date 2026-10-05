@@ -123,7 +123,7 @@ jq -r '.windows[] | "\(.kind) \(.label // "all") \(.percent)%"' ~/.claude/usage-
 
 Only while a Claude Code session is running. Nothing runs on a timer.
 
-- On session start, and whenever Claude Code reports that a limit moved, the mod has Claude Code call Anthropic's usage endpoint. At most one call per five minutes across all open sessions, ten minutes after a 429.
+- On session start, whenever Claude Code reports that a limit moved, and at the end of a turn once five minutes have passed since the last call, the mod has Claude Code call Anthropic's usage endpoint. At most one call per five minutes across all open sessions, ten minutes after a 429.
 - Between those calls it writes the session and weekly percent Claude Code already holds for its status line, merged into the last report. No request is made for those. Model-scoped windows, `credits`, `cloudSessionCredits`, `projectSetupCredit`, `grants`, and `weeklyBreakdown` come only from the endpoint, so they carry over unchanged until the next call.
 - The status line figures trail the endpoint by about a point, so inside one window a lower reading never replaces a higher one.
 

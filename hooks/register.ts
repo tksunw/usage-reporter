@@ -62,6 +62,14 @@ export const register: Register = on => {
     if (e.changed.includes('rateLimits')) await report($, e.rateLimits).catch(() => {})
     return next(e)
   })
+
+  // A quiet stretch moves no whole point, so nothing above writes and readers see an old file. Once the
+  // floor has lapsed, a main-conversation turn reports anyway, which stamps the file current.
+  on('turn.complete', async ($, e, next) => {
+    const done = await next(e)
+    if (!e.agentId && (await $.clock.now()) >= Number((await $.store.get('nextFetchAt')) ?? 0)) await report($).catch(() => {})
+    return done
+  })
 }
 
 async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit[]) {

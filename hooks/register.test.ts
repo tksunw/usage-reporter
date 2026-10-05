@@ -55,6 +55,7 @@ function world(on: On, status = 200, body: unknown = USAGE, env: Record<string, 
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 3, 18) })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.measure', (_$, e) => ({ changed: [...e.changed] }))
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('session.authorize', () => ({ value: { handle: 'h', kind: 'bearer' as const } }))
   on('http.fetch', (_$, e) => {
     seen.fetches.push(e)
@@ -72,6 +73,7 @@ function world(on: On, status = 200, body: unknown = USAGE, env: Record<string, 
   return { clock, file, reply, ...seen }
 }
 
+const TURN = { answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' as const }
 const start = { cwd: '/w', surface: null, isInteractive: false }
 
 test('session start writes the windows in format 1, asked for with the session credential', async ($, on) => {
@@ -117,6 +119,25 @@ test('inside the five minute floor the status line figures merge into the last r
   await clock.advance(4 * 60_000)
   await $.session.measure(MEASURE)
   expect(fetches).toHaveLength(2)
+})
+
+test('a main-conversation turn after the floor lapses refreshes the file; inside it, and for a subagent, it does not', async ($, on) => {
+  const { clock, fetches, writes } = world(on)
+  await $.session.start(start)
+  expect(fetches).toHaveLength(1)
+
+  await clock.advance(60_000)
+  await $.turn.complete(TURN)
+  expect(fetches).toHaveLength(1) // inside the floor: nothing
+  expect(writes).toHaveLength(1)
+
+  await clock.advance(4 * 60_000)
+  await $.turn.complete({ ...TURN, agentId: 'a1' })
+  expect(fetches).toHaveLength(1) // a subagent's turn: nothing
+
+  await $.turn.complete(TURN)
+  expect(fetches).toHaveLength(2) // past the floor: reports, with no rate limit change
+  expect(writes).toHaveLength(2)
 })
 
 test('a new window replaces the old one even when it reads lower', async ($, on) => {
