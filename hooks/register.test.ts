@@ -45,6 +45,18 @@ const WEEKLY = {
 // Captured live on 2026-10-04 while a Project ran; Claude Desktop showed it as 18% used.
 const LANTERN = { utilization: 17.993769, resets_at: '2026-10-05T17:16:23.346348+00:00', limit_dollars: 100, used_dollars: 17.993769, remaining_dollars: 82.006231, locked_reason: null }
 const CREDITS = { enabled: true, used: 12.34, limit: 50, currency: 'USD', at: '2026-10-03T18:00:00.000Z' }
+// The shape of an Enterprise login's response (seen 2026-10-05), trimmed, figures made up: no windows, every codename null, a spend budget.
+const ENTERPRISE = {
+  five_hour: null,
+  seven_day: null,
+  seven_day_opus: null,
+  iguana_necktie: null,
+  harbor_lantern: null,
+  extra_usage: { is_enabled: true, monthly_limit: 80000, used_credits: 2468.0, utilization: 3.085, currency: 'USD', decimal_places: 2 },
+  limits: [],
+  spend: { used: { amount_minor: 2468, currency: 'USD', exponent: 2 }, limit: { amount_minor: 80000, currency: 'USD', exponent: 2 }, percent: 3, enabled: true },
+  seven_day_breakdown: null,
+}
 
 // The world beneath the mod: a clock, a store, HOME, a file, and an endpoint that answers `reply`.
 function world(on: On, status = 200, body: unknown = USAGE, env: Record<string, string> = { HOME: '/home/t' }) {
@@ -286,7 +298,7 @@ test('grants list extra usage and every dollar grant, unknown codenames included
   const at = '2026-10-03T18:00:00.000Z'
   const grants = [
     { id: 'extra_usage', label: 'Extra usage', used: 12.34, limit: 50, currency: 'USD', at },
-    { id: 'iguana_necktie', label: 'Cloud sessions', used: 12.5, limit: 250, currency: 'USD', endsAt: '2026-11-05T07:59:00.000Z', at },
+    { id: 'iguana_necktie', label: 'Cloud sessions', used: 12.5, limit: 250, currency: 'USD', endsAt: '2026-11-05T07:59:00.000Z', ends: 'expiry', at },
     { id: 'harbor_lantern', label: 'Project setup', used: 17.993769, limit: 100, currency: 'USD', endsAt: '2026-10-05T17:16:23.346Z', ends: 'expiry', at },
     { id: 'nimbus_quill', label: 'nimbus_quill', used: 3, currency: 'USD', at },
   ]
@@ -304,4 +316,35 @@ test('extra usage that is turned off is not a grant', async ($, on) => {
   await $.session.start(start)
   expect(file().credits.enabled).toBe(false)
   expect('grants' in file()).toBe(false)
+})
+
+test('an Enterprise login, with no windows anywhere, writes its spend budget and refreshes it after the floor', async ($, on) => {
+  const { clock, fetches, file, reply } = world(on, 200, ENTERPRISE)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits: [], cost: { usd: 0 } } }))
+  await $.session.start(start)
+  const credits = { enabled: true, used: 24.68, limit: 800, currency: 'USD', at: '2026-10-03T18:00:00.000Z' }
+  expect(file()).toEqual({
+    version: 1,
+    at: '2026-10-03T18:00:00.000Z',
+    windows: [],
+    credits,
+    grants: [{ id: 'extra_usage', label: 'Extra usage', used: 24.68, limit: 800, currency: 'USD', at: credits.at }],
+    raw: ENTERPRISE,
+  })
+
+  reply.body = { ...ENTERPRISE, spend: { ...ENTERPRISE.spend, used: { ...ENTERPRISE.spend.used, amount_minor: 2000 } } }
+  await clock.advance(5 * 60_000)
+  await $.turn.complete(TURN)
+  expect(fetches).toHaveLength(2)
+  expect(file().credits.used).toBe(20)
+})
+
+test('a response with credits but no windows, while the status line has some, keeps the last windows', async ($, on) => {
+  const { clock, file, reply } = world(on)
+  await $.session.start(start)
+  reply.body = { spend: SPEND }
+  await clock.advance(5 * 60_000)
+  await $.session.measure(MEASURE)
+  expect(file().windows.map((w: { label?: string }) => w.label ?? 'all')).toEqual(['all', 'all', 'Fable'])
+  expect(file().raw).toEqual(USAGE)
 })

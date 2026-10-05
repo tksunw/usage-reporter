@@ -18,7 +18,7 @@ It writes `~/.claude/usage-reporter/usage.json`:
   "projectSetupCredit": { "used": 17.993769, "limit": 100, "currency": "USD", "expiresAt": "2026-10-05T17:16:23.346Z", "at": "2026-10-04T18:37:30.984Z" },
   "grants": [
     { "id": "extra_usage", "label": "Extra usage", "used": 0, "limit": 100, "currency": "USD", "at": "2026-10-04T18:37:30.984Z" },
-    { "id": "iguana_necktie", "label": "Cloud sessions", "used": 1.864015, "limit": 250, "currency": "USD", "endsAt": "2026-11-05T07:59:00.000Z", "at": "2026-10-04T18:37:30.984Z" },
+    { "id": "iguana_necktie", "label": "Cloud sessions", "used": 1.864015, "limit": 250, "currency": "USD", "endsAt": "2026-11-05T07:59:00.000Z", "ends": "expiry", "at": "2026-10-04T18:37:30.984Z" },
     { "id": "harbor_lantern", "label": "Project setup", "used": 17.993769, "limit": 100, "currency": "USD", "endsAt": "2026-10-05T17:16:23.346Z", "ends": "expiry", "at": "2026-10-04T18:37:30.984Z" }
   ],
   "weeklyBreakdown": {
@@ -67,7 +67,7 @@ Format version 1. A reader should check `version` and stop if it is not one it k
 |---|---|
 | `version` | `1` |
 | `at` | When the file was last written, ISO 8601 UTC |
-| `windows[]` | One entry per usage window |
+| `windows[]` | One entry per usage window. Empty on an Enterprise login, which has no windows, only a spend budget in `credits` |
 | `windows[].kind` | `session` (the 5-hour window) or `weekly` (the 7-day window) |
 | `windows[].label` | Present on a weekly window scoped to one model family, for example `Fable`. Absent on the all-models windows |
 | `windows[].percent` | Percent of the window used, 0 to 100 |
@@ -83,7 +83,7 @@ Format version 1. A reader should check `version` and stop if it is not one it k
 | `cloudSessionCredits.used` | Dollars spent |
 | `cloudSessionCredits.limit` | Dollars granted. Can be absent |
 | `cloudSessionCredits.currency` | `USD` |
-| `cloudSessionCredits.resetsAt` | The date the endpoint gives for the grant, ISO 8601 UTC. Whether it is a reset or an expiry is not confirmed. Can be absent |
+| `cloudSessionCredits.resetsAt` | When the credit expires, ISO 8601 UTC. Despite the name it is an expiry, as Claude's usage page shows it; the name stays for existing readers. Can be absent |
 | `cloudSessionCredits.at` | When the figures were read. Can be older than the file's `at` |
 | `projectSetupCredit` | The one-time Claude Projects setup credit, shown in Claude Desktop as "Project setup credit". Absent when Anthropic's response does not carry it, which includes before it is granted |
 | `projectSetupCredit.used` | Dollars spent |
@@ -145,6 +145,7 @@ So session and weekly follow each turn, and model-scoped windows and credits upd
 - `grants` treats any top-level object in Anthropic's response with a numeric `used_dollars` as a grant, other than the usage windows. A new grant appears there under its codename without a mod update, but with no friendly label or `ends` until the mod learns it.
 - `projectSetupCredit` is read from `harbor_lantern`, another codename, matched to Claude Desktop's "Project setup credit" bar by its limit, spend, and expiry. Whether the key goes null after the credit expires has not been seen yet.
 - It needs a subscription login. With an API key there are no usage windows and nothing is written.
+- An Enterprise login has no session or weekly windows, only a monthly spend budget. The file then has an empty `windows[]` and the budget in `credits` and `grants`, refreshed at most every five minutes. The response carries no reset date for the budget, so none is written; Claude's settings page shows it resetting at the start of each month.
 - With `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` set, Claude Code refuses the call and you get session and weekly only.
 - This is unofficial and not affiliated with Anthropic.
 

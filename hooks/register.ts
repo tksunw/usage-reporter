@@ -16,7 +16,7 @@ type Window = { kind: 'session' | 'weekly'; label?: string; percent: number; res
  */
 type Credits = { enabled: boolean; used: number; limit?: number | null; currency?: string; at: string }
 
-/** Cloud session credits, in dollars. `resetsAt` is as the endpoint gives it: a reset or an expiry, unverified. */
+/** Cloud session credits, in dollars. `resetsAt` is when the credit expires (Claude's usage page says "Expires"); the name predates that. */
 type CloudCredits = { used: number; limit?: number; currency: 'USD'; resetsAt?: string; at: string }
 
 /** The one-time Claude Projects setup credit, in dollars. It expires at `expiresAt`; it does not reset. */
@@ -31,7 +31,7 @@ type Grant = { id: string; label: string; used: number; limit?: number | null; c
 
 /** Codenamed grants the mod knows. Any other top-level object with a numeric `used_dollars` still becomes a grant. */
 const KNOWN_GRANTS: Record<string, { label: string; ends?: Grant['ends'] }> = {
-  iguana_necktie: { label: 'Cloud sessions' },
+  iguana_necktie: { label: 'Cloud sessions', ends: 'expiry' },
   harbor_lantern: { label: 'Project setup', ends: 'expiry' },
 }
 
@@ -90,15 +90,20 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
         const res = await $.http.fetch(ENDPOINT, { headers: { 'anthropic-beta': 'oauth-2025-04-20' }, auth: auth.handle })
         if (res.ok) {
           const raw: unknown = JSON.parse(res.text)
-          const windows = fromUsage(raw, at)
           const credits = fromCredits(raw, at)
-          if (windows.length > 0)
+          const grants = fromGrants(raw, credits, at)
+          const windows = fromUsage(raw, at)
+          // An Enterprise login has no windows anywhere, only a spend budget, so credits alone are worth a
+          // write. With windows on the status line, an empty response is a shape this mod does not read,
+          // and the merge below keeps the last report's windows instead.
+          const enterprise = windows.length === 0 && fromRateLimits(rateLimits ?? (await $.session.usage()).rateLimits, at).length === 0
+          if (windows.length > 0 || (enterprise && (credits || grants)))
             return write({
               windows,
               credits,
               cloudSessionCredits: fromCloudCredits(raw, at),
               projectSetupCredit: fromSetupCredit(raw, at),
-              grants: fromGrants(raw, credits, at),
+              grants,
               weeklyBreakdown: fromBreakdown(raw, at),
               raw,
             })
@@ -112,6 +117,7 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
 
   // Inside the floor, or the call failed: the session and weekly percent Claude Code already holds
   // for its status line, merged into the last report so the model-scoped windows and credits stay.
+  // With none (an Enterprise login), the last report stands as is.
   const latest = fromRateLimits(rateLimits ?? (await $.session.usage()).rateLimits, at)
   if (latest.length === 0) return
   const last = await $.fs.read(path).then(text => JSON.parse(text) as Partial<Report>, () => ({}) as Partial<Report>)
@@ -149,9 +155,9 @@ function fromCredits(raw: any, at: string): Credits | undefined {
     return { enabled: spend.enabled === true, used, limit, currency: text(spend.used.currency), at }
   }
 
-  // Assumes `used_credits` and `monthly_limit` are minor units (cents) at `decimal_places`, 2 when
-  // absent. Seen for `monthly_limit` (10000 beside a `spend.limit` of 100.00); `used_credits` has
-  // only ever read 0.
+  // `used_credits` and `monthly_limit` are minor units (cents) at `decimal_places`, 2 when absent.
+  // Seen for both: `monthly_limit` 10000 beside a `spend.limit` of 100.00, and a non-zero
+  // `used_credits` equal to `spend.used.amount_minor`.
   const extra = raw?.extra_usage
   const places = extra?.decimal_places ?? 2
   const spent = major(extra?.used_credits, places)
