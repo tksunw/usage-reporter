@@ -55,9 +55,19 @@ Then point Claude Code at that folder's parent in `~/.claude/settings.json`, if 
 
 Claude Code loads every folder under `~/.claude/mods` as a mod, which is why it lives there and not in `~/.claude/skills`: pointing `CLAUDE_CODE_PLUGIN_DIRS` at the skills folder would try to load every skill as a mod.
 
-Start a new Claude Code session. The file appears after the session starts. To update, `git -C ~/.claude/mods/usage-reporter pull`. To remove the mod, delete `~/.claude/mods/usage-reporter`; the last report stays in `~/.claude/usage-reporter/` until you delete that too.
+Start a new Claude Code session. The file appears after the session starts. To remove the mod, delete `~/.claude/mods/usage-reporter`; the last report stays in `~/.claude/usage-reporter/` until you delete that too.
 
 To try it for one session without installing: `claude --plugin-dir /path/to/usage-reporter`.
+
+## Update
+
+Pull the latest version into the folder you cloned:
+
+```bash
+git -C ~/.claude/mods/usage-reporter pull
+```
+
+The next Claude Code session you start runs the new version.
 
 ## The file format
 
