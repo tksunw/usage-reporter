@@ -35,10 +35,22 @@ It writes `~/.claude/usage-reporter/usage.json`:
 Requires a Claude Code version with mods (Anthropic supports mods on 2.1.287 and later; the mod has also run on 2.1.251) and a Claude subscription login.
 
 ```bash
-git clone https://github.com/tksunw/usage-reporter ~/.claude/skills/usage-reporter
+git clone https://github.com/tksunw/usage-reporter ~/.claude/mods/usage-reporter
 ```
 
-Start a new Claude Code session. The file appears after the session starts. To remove the mod, delete that folder; the last report stays in `~/.claude/usage-reporter/` until you delete that too.
+Then point Claude Code at that folder's parent in `~/.claude/settings.json`, if it does not already:
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods"
+  }
+}
+```
+
+Claude Code loads every folder under `~/.claude/mods` as a mod, which is why it lives there and not in `~/.claude/skills`: pointing `CLAUDE_CODE_PLUGIN_DIRS` at the skills folder would try to load every skill as a mod.
+
+Start a new Claude Code session. The file appears after the session starts. To update, `git -C ~/.claude/mods/usage-reporter pull`. To remove the mod, delete `~/.claude/mods/usage-reporter`; the last report stays in `~/.claude/usage-reporter/` until you delete that too.
 
 To try it for one session without installing: `claude --plugin-dir /path/to/usage-reporter`.
 
