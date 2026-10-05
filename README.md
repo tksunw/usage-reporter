@@ -134,7 +134,7 @@ So session and weekly follow each turn, and model-scoped windows and credits upd
 - **Your login**: the mod never sees it. It calls `$.session.authorize()`, gets an opaque handle, and passes the handle to `$.http.fetch`. Claude Code attaches the credential on its side.
 - **Network**: one request, `GET https://api.anthropic.com/api/oauth/usage`, made by Claude Code. This is the call behind `/usage`.
 - **Files**: writes `~/.claude/usage-reporter/usage.json` and reads it back to merge. The file holds percentages, reset times, credit figures, the per-surface split, and `raw`, Anthropic's last response as given. No token, no prompts. The mod cannot set the file's mode, so it gets your default permissions; on a Mac with other accounts that can reach `~/.claude`, they can read your usage and credit figures.
-- **Environment**: reads `HOME`.
+- **Environment**: reads `HOME`, else `USERPROFILE`.
 
 `claude plugin validate .` prints the same list from the source. The whole mod is `hooks/register.ts`.
 

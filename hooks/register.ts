@@ -65,7 +65,8 @@ export const register: Register = on => {
 }
 
 async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit[]) {
-  const home = await $.env.get('HOME')
+  // HOME, else USERPROFILE for Windows; status-enhanced resolves it the same way.
+  const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
   if (!home) return
   const path = `${home}/${FILE}`
   const now = await $.clock.now()

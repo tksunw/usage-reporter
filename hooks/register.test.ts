@@ -47,10 +47,10 @@ const LANTERN = { utilization: 17.993769, resets_at: '2026-10-05T17:16:23.346348
 const CREDITS = { enabled: true, used: 12.34, limit: 50, currency: 'USD', at: '2026-10-03T18:00:00.000Z' }
 
 // The world beneath the mod: a clock, a store, HOME, a file, and an endpoint that answers `reply`.
-function world(on: On, status = 200, body: unknown = USAGE) {
+function world(on: On, status = 200, body: unknown = USAGE, env: Record<string, string> = { HOME: '/home/t' }) {
   const reply = { status, body }
   const seen = { fetches: [] as unknown[], writes: [] as { path: string; text: string }[] }
-  mock.env(on, { HOME: '/home/t' })
+  mock.env(on, env)
   mock.store(on)
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 3, 18) })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
@@ -93,6 +93,12 @@ test('session start writes the windows in format 1, asked for with the session c
     ],
     raw: USAGE,
   })
+})
+
+test('with no HOME the file is written under USERPROFILE', async ($, on) => {
+  const { writes } = world(on, 200, USAGE, { USERPROFILE: '/win/t' })
+  await $.session.start(start)
+  expect(writes.at(-1)!.path).toBe('/win/t/.claude/usage-reporter/usage.json')
 })
 
 test('inside the five minute floor the status line figures merge into the last report', async ($, on) => {
