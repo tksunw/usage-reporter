@@ -16,6 +16,11 @@ It writes `~/.claude/usage-reporter/usage.json`:
   "credits": { "enabled": false, "used": 0, "limit": null, "currency": "USD", "at": "2026-10-03T19:51:50.920Z" },
   "cloudSessionCredits": { "used": 0, "limit": 250, "currency": "USD", "resetsAt": "2026-11-05T07:59:00.000Z", "at": "2026-10-03T19:51:50.920Z" },
   "projectSetupCredit": { "used": 17.993769, "limit": 100, "currency": "USD", "expiresAt": "2026-10-05T17:16:23.346Z", "at": "2026-10-04T18:37:30.984Z" },
+  "grants": [
+    { "id": "extra_usage", "label": "Extra usage", "used": 0, "limit": 100, "currency": "USD", "at": "2026-10-04T18:37:30.984Z" },
+    { "id": "iguana_necktie", "label": "Cloud sessions", "used": 1.864015, "limit": 250, "currency": "USD", "endsAt": "2026-11-05T07:59:00.000Z", "at": "2026-10-04T18:37:30.984Z" },
+    { "id": "harbor_lantern", "label": "Project setup", "used": 17.993769, "limit": 100, "currency": "USD", "endsAt": "2026-10-05T17:16:23.346Z", "ends": "expiry", "at": "2026-10-04T18:37:30.984Z" }
+  ],
   "weeklyBreakdown": {
     "windowStartedAt": "2026-09-27T23:00:00.902Z",
     "rows": [
@@ -86,6 +91,15 @@ Format version 1. A reader should check `version` and stop if it is not one it k
 | `projectSetupCredit.currency` | `USD` |
 | `projectSetupCredit.expiresAt` | When the credit expires, ISO 8601 UTC. It does not reset. Can be absent |
 | `projectSetupCredit.at` | When the figures were read. Can be older than the file's `at` |
+| `grants[]` | Every dollar credit in one list, for readers that want to show them all without knowing each kind: extra usage when it is turned on, then every grant in Anthropic's response, including ones this mod has never seen. Absent when there are none. Build on this rather than the three fields above |
+| `grants[].id` | Where it came from: `extra_usage`, or Anthropic's codename for the grant (`iguana_necktie`, `harbor_lantern`). Stable; use it to tell grants apart |
+| `grants[].label` | A name to show, for example `Cloud sessions`. For a grant the mod does not know, the codename itself |
+| `grants[].used` | Dollars spent |
+| `grants[].limit` | Dollars available. `null` when no limit is set. Can be absent |
+| `grants[].currency` | ISO 4217 code, for example `USD` |
+| `grants[].endsAt` | When the grant resets or expires, ISO 8601 UTC. Can be absent |
+| `grants[].ends` | `reset` or `expiry`, saying which `endsAt` is. Absent when not known |
+| `grants[].at` | When the figures were read. Can be older than the file's `at` |
 | `weeklyBreakdown` | The weekly window's usage split by surface, account-wide (claude.ai chat included). Absent when Anthropic's response does not carry it |
 | `weeklyBreakdown.windowStartedAt` | When the weekly window began, ISO 8601 UTC. Can be absent |
 | `weeklyBreakdown.rows[]` | One entry per surface, in Anthropic's order. Keys not listed here are passed through; show them rather than dropping them |
@@ -110,7 +124,7 @@ jq -r '.windows[] | "\(.kind) \(.label // "all") \(.percent)%"' ~/.claude/usage-
 Only while a Claude Code session is running. Nothing runs on a timer.
 
 - On session start, and whenever Claude Code reports that a limit moved, the mod has Claude Code call Anthropic's usage endpoint. At most one call per five minutes across all open sessions, ten minutes after a 429.
-- Between those calls it writes the session and weekly percent Claude Code already holds for its status line, merged into the last report. No request is made for those. Model-scoped windows, `credits`, `cloudSessionCredits`, `projectSetupCredit`, and `weeklyBreakdown` come only from the endpoint, so they carry over unchanged until the next call.
+- Between those calls it writes the session and weekly percent Claude Code already holds for its status line, merged into the last report. No request is made for those. Model-scoped windows, `credits`, `cloudSessionCredits`, `projectSetupCredit`, `grants`, and `weeklyBreakdown` come only from the endpoint, so they carry over unchanged until the next call.
 - The status line figures trail the endpoint by about a point, so inside one window a lower reading never replaces a higher one.
 
 So session and weekly follow each turn, and model-scoped windows and credits update at most every five minutes. Usage from claude.ai chat or Claude Desktop shows up at the next Claude Code turn.
@@ -128,6 +142,7 @@ So session and weekly follow each turn, and model-scoped windows and credits upd
 
 - The usage endpoint is not documented by Anthropic and can change. When it does, the mod falls back to the session and weekly figures, and the fix belongs here, not in the tools that read the file.
 - `cloudSessionCredits` is read from a key Anthropic names by codename (`iguana_necktie`), matched to the credit by its amount. If they rename it, the field goes absent until the mod is updated.
+- `grants` treats any top-level object in Anthropic's response with a numeric `used_dollars` as a grant, other than the usage windows. A new grant appears there under its codename without a mod update, but with no friendly label or `ends` until the mod learns it.
 - `projectSetupCredit` is read from `harbor_lantern`, another codename, matched to Claude Desktop's "Project setup credit" bar by its limit, spend, and expiry. Whether the key goes null after the credit expires has not been seen yet.
 - It needs a subscription login. With an API key there are no usage windows and nothing is written.
 - With `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` set, Claude Code refuses the call and you get session and weekly only.

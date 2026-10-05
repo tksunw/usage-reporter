@@ -22,6 +22,19 @@ type CloudCredits = { used: number; limit?: number; currency: 'USD'; resetsAt?: 
 /** The one-time Claude Projects setup credit, in dollars. It expires at `expiresAt`; it does not reset. */
 type SetupCredit = { used: number; limit?: number; currency: 'USD'; expiresAt?: string; at: string }
 
+/**
+ * One dollar credit or grant. `id` is the key it came from (`extra_usage`, or Anthropic's codename),
+ * `label` a name for people, the codename itself when the mod does not know it. `limit` is null when
+ * no limit is set. `ends` says whether `endsAt` is a reset or an expiry, and is absent when not known.
+ */
+type Grant = { id: string; label: string; used: number; limit?: number | null; currency: string; endsAt?: string; ends?: 'reset' | 'expiry'; at: string }
+
+/** Codenamed grants the mod knows. Any other top-level object with a numeric `used_dollars` still becomes a grant. */
+const KNOWN_GRANTS: Record<string, { label: string; ends?: Grant['ends'] }> = {
+  iguana_necktie: { label: 'Cloud sessions' },
+  harbor_lantern: { label: 'Project setup', ends: 'expiry' },
+}
+
 /** The weekly window's usage by surface (Claude Code, chat, ...). Rows pass through as given, unknown keys included. */
 type Breakdown = { windowStartedAt?: string; rows: { key: string; label?: string; percent: number }[]; at: string }
 
@@ -33,6 +46,7 @@ type Report = {
   credits?: Credits
   cloudSessionCredits?: CloudCredits
   projectSetupCredit?: SetupCredit
+  grants?: Grant[]
   weeklyBreakdown?: Breakdown
   raw?: unknown
 }
@@ -68,12 +82,14 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
         if (res.ok) {
           const raw: unknown = JSON.parse(res.text)
           const windows = fromUsage(raw, at)
+          const credits = fromCredits(raw, at)
           if (windows.length > 0)
             return write({
               windows,
-              credits: fromCredits(raw, at),
+              credits,
               cloudSessionCredits: fromCloudCredits(raw, at),
               projectSetupCredit: fromSetupCredit(raw, at),
+              grants: fromGrants(raw, credits, at),
               weeklyBreakdown: fromBreakdown(raw, at),
               raw,
             })
@@ -90,8 +106,8 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
   const latest = fromRateLimits(rateLimits ?? (await $.session.usage()).rateLimits, at)
   if (latest.length === 0) return
   const last = await $.fs.read(path).then(text => JSON.parse(text) as Partial<Report>, () => ({}) as Partial<Report>)
-  const { windows = [], credits, cloudSessionCredits, projectSetupCredit, weeklyBreakdown } = last.version === 1 ? last : ({} as Partial<Report>)
-  await write({ windows: merge(windows, latest), credits, cloudSessionCredits, projectSetupCredit, weeklyBreakdown, raw: last.raw })
+  const { windows = [], credits, cloudSessionCredits, projectSetupCredit, grants, weeklyBreakdown } = last.version === 1 ? last : ({} as Partial<Report>)
+  await write({ windows: merge(windows, latest), credits, cloudSessionCredits, projectSetupCredit, grants, weeklyBreakdown, raw: last.raw })
 }
 
 /** The usage response: `limits[]` when present, else the older `five_hour` / `seven_day` objects. */
@@ -155,6 +171,23 @@ function fromSetupCredit(raw: any, at: string): SetupCredit | undefined {
   if (typeof grant?.used_dollars !== 'number') return undefined
   const limit = typeof grant.limit_dollars === 'number' ? grant.limit_dollars : undefined
   return { used: grant.used_dollars, limit, currency: 'USD', expiresAt: iso(grant.resets_at), at }
+}
+
+/**
+ * Every dollar credit in one list: extra usage when it is on, then each top-level object in the
+ * response with a numeric `used_dollars`, other than the usage windows (`five_hour`, `seven_day*`).
+ * Undefined when there are none.
+ */
+function fromGrants(raw: any, credits: Credits | undefined, at: string): Grant[] | undefined {
+  const grants: Grant[] = []
+  if (credits?.enabled) grants.push({ id: 'extra_usage', label: 'Extra usage', used: credits.used, limit: credits.limit, currency: credits.currency ?? 'USD', at })
+  for (const [id, grant] of Object.entries<any>(raw && typeof raw === 'object' ? raw : {})) {
+    if (id.startsWith('five_hour') || id.startsWith('seven_day') || typeof grant?.used_dollars !== 'number') continue
+    const known = KNOWN_GRANTS[id]
+    const limit = typeof grant.limit_dollars === 'number' ? grant.limit_dollars : undefined
+    grants.push({ id, label: known?.label ?? id, used: grant.used_dollars, limit, currency: 'USD', endsAt: iso(grant.resets_at), ends: known?.ends, at })
+  }
+  return grants.length > 0 ? grants : undefined
 }
 
 /** The weekly breakdown, from `seven_day_breakdown`. Rows without a string key and a numeric percent are dropped. */

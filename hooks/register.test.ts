@@ -189,6 +189,7 @@ test('a response with no credit objects writes no credit fields', async ($, on) 
   expect('credits' in file()).toBe(false)
   expect('cloudSessionCredits' in file()).toBe(false)
   expect('projectSetupCredit' in file()).toBe(false)
+  expect('grants' in file()).toBe(false)
   expect('weeklyBreakdown' in file()).toBe(false)
 })
 
@@ -229,6 +230,7 @@ test('a breakdown with no usable rows is left out', async ($, on) => {
   const { file } = world(on, 200, { ...USAGE, seven_day_breakdown: { ...BREAKDOWN, rows: [{ key: 'chat' }, { percent: 5 }] } })
   await $.session.start(start)
   expect('projectSetupCredit' in file()).toBe(false)
+  expect('grants' in file()).toBe(false)
   expect('weeklyBreakdown' in file()).toBe(false)
 })
 
@@ -248,4 +250,31 @@ test('a null harbor_lantern writes no project setup credit', async ($, on) => {
   const { file } = world(on, 200, { ...USAGE, harbor_lantern: null })
   await $.session.start(start)
   expect('projectSetupCredit' in file()).toBe(false)
+})
+
+test('grants list extra usage and every dollar grant, unknown codenames included, and carry over', async ($, on) => {
+  const nimbus = { used_dollars: 3, limit_dollars: null, resets_at: null }
+  const window = { utilization: 10, used_dollars: 1 } // a window that someday carries dollars is not a grant
+  const { clock, file } = world(on, 200, { ...USAGE, spend: SPEND, iguana_necktie: NECKTIE, harbor_lantern: LANTERN, nimbus_quill: nimbus, seven_day_cowork: window, cinder_cove: null })
+  const at = '2026-10-03T18:00:00.000Z'
+  const grants = [
+    { id: 'extra_usage', label: 'Extra usage', used: 12.34, limit: 50, currency: 'USD', at },
+    { id: 'iguana_necktie', label: 'Cloud sessions', used: 12.5, limit: 250, currency: 'USD', endsAt: '2026-11-05T07:59:00.000Z', at },
+    { id: 'harbor_lantern', label: 'Project setup', used: 17.993769, limit: 100, currency: 'USD', endsAt: '2026-10-05T17:16:23.346Z', ends: 'expiry', at },
+    { id: 'nimbus_quill', label: 'nimbus_quill', used: 3, currency: 'USD', at },
+  ]
+  await $.session.start(start)
+  expect(file().grants).toEqual(grants)
+
+  await clock.advance(60_000)
+  await $.session.measure(MEASURE)
+  expect(file().at).toBe('2026-10-03T18:01:00.000Z')
+  expect(file().grants).toEqual(grants)
+})
+
+test('extra usage that is turned off is not a grant', async ($, on) => {
+  const { file } = world(on, 200, { ...USAGE, spend: { ...SPEND, enabled: false } })
+  await $.session.start(start)
+  expect(file().credits.enabled).toBe(false)
+  expect('grants' in file()).toBe(false)
 })
