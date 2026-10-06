@@ -93,11 +93,13 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
           const credits = fromCredits(raw, at)
           const grants = fromGrants(raw, credits, at)
           const windows = fromUsage(raw, at)
-          // An Enterprise login has no windows anywhere, only a spend budget, so credits alone are worth a
-          // write. With windows on the status line, an empty response is a shape this mod does not read,
-          // and the merge below keeps the last report's windows instead.
-          const enterprise = windows.length === 0 && fromRateLimits(rateLimits ?? (await $.session.usage()).rateLimits, at).length === 0
-          if (windows.length > 0 || (enterprise && (credits || grants)))
+          // An Enterprise login has no windows, only a spend budget, and is written with `windows: []`.
+          // It is recognized by its shape, not by an empty status line, which a session also has before
+          // its first turn. Any other response without windows is a shape this mod does not read, and
+          // the merge below keeps the last report's windows instead.
+          const enterprise =
+            windows.length === 0 && isWindowless(raw) && fromRateLimits(rateLimits ?? (await $.session.usage()).rateLimits, at).length === 0
+          if (windows.length > 0 || enterprise)
             return write({
               windows,
               credits,
@@ -143,6 +145,14 @@ function fromUsage(raw: any, at: string): Window[] {
   const older = (key: string, kind: Window['kind'], label?: string): Window[] =>
     typeof raw?.[key]?.utilization === 'number' ? [{ kind, label, percent: raw[key].utilization, resetsAt: iso(raw[key].resets_at), at }] : []
   return [...older('five_hour', 'session'), ...older('seven_day', 'weekly'), ...older('seven_day_opus', 'weekly', 'Opus'), ...older('seven_day_sonnet', 'weekly', 'Sonnet')]
+}
+
+/**
+ * A response that says outright there are no windows: an empty `limits[]` and null `five_hour` and
+ * `seven_day`, as an Enterprise login returns. A missing key is not enough; that may be a renamed one.
+ */
+function isWindowless(raw: any): boolean {
+  return Array.isArray(raw?.limits) && raw.limits.length === 0 && raw.five_hour === null && raw.seven_day === null
 }
 
 /** Credits from the usage response: `spend` when it parses, else `extra_usage`. Undefined when neither does. */

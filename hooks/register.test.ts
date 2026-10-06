@@ -348,3 +348,23 @@ test('a response with credits but no windows, while the status line has some, ke
   expect(file().windows.map((w: { label?: string }) => w.label ?? 'all')).toEqual(['all', 'all', 'Fable'])
   expect(file().raw).toEqual(USAGE)
 })
+
+test('a fresh session, with nothing on the status line yet, keeps the last windows when the response shape is unread', async ($, on) => {
+  const { clock, file, reply } = world(on)
+  let rateLimits: unknown[] = MEASURE.rateLimits
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits, cost: { usd: 0 } } }))
+  await $.session.start(start)
+  rateLimits = []
+  reply.body = { usage_v2: {}, spend: SPEND }
+  await clock.advance(5 * 60_000)
+  await $.session.start(start)
+  expect(file().windows.map((w: { label?: string }) => w.label ?? 'all')).toEqual(['all', 'all', 'Fable'])
+  expect(file().raw).toEqual(USAGE)
+})
+
+test('an Enterprise login with no budget in the response still writes an empty report', async ($, on) => {
+  const { file } = world(on, 200, { ...ENTERPRISE, spend: null, extra_usage: null })
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits: [], cost: { usd: 0 } } }))
+  await $.session.start(start)
+  expect(file()).toEqual({ version: 1, at: '2026-10-03T18:00:00.000Z', windows: [], raw: { ...ENTERPRISE, spend: null, extra_usage: null } })
+})
