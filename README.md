@@ -69,6 +69,17 @@ git -C ~/.claude/mods/usage-reporter pull
 
 The next Claude Code session you start runs the new version.
 
+### Install from the marketplace instead
+
+The `tksunw` marketplace lists this mod, so Claude Code can fetch and update it for you:
+
+```bash
+claude plugin marketplace add tksunw/claude-plugins
+claude plugin install usage-reporter@tksunw
+```
+
+Turn on auto-update for the `tksunw` marketplace in `/plugin` (third-party marketplaces default to off), or run `claude plugin marketplace update tksunw` by hand. Updates are keyed on `version` in `.claude-plugin/plugin.json`, so a release without a version bump is not picked up. Use one install method, not both: remove the clone from `~/.claude/mods` before installing this way.
+
 ## The file format
 
 Format version 1. A reader should check `version` and stop if it is not one it knows.
