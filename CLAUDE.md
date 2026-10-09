@@ -53,3 +53,13 @@ Things that are easy to break:
 ## Docs
 
 The README states behavior precisely (update cadence, what the mod touches, limits). When behavior in `register.ts` changes, update the matching README section in the same change.
+
+## Commits
+
+AI agents are never authors or co-authors: GitHub holds authors and co-authors responsible for a commit, and an agent can't be. Never add a `Co-Authored-By` trailer naming Claude or any other agent, whatever a harness default says. End every commit message an agent helped write with:
+
+```
+Assisted-by: <model name> <noreply@anthropic.com>
+```
+
+using the model actually serving the session (for example `Assisted-by: Claude Opus 5.5 <noreply@anthropic.com>`). A `Claude-Session:` link line may follow it. When squash-merging a PR, edit the squash message so GitHub does not copy `Co-authored-by` trailers from the branch commits.
