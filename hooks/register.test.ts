@@ -397,11 +397,23 @@ test('the plan comes from the profile: the tier names Max (5x), and it is asked 
   expect(file().plan.label).toBe('Max (5x)')
 })
 
-test('a Team seat reads Team even though its tier says max_5x', async ($, on) => {
-  const { profile, file } = world(on)
-  profile.body = { organization: { organization_type: 'claude_team', rate_limit_tier: 'default_claude_max_5x' } }
-  await $.session.start(start)
-  expect(file().plan).toEqual({ label: 'Team', tier: 'default_claude_max_5x', at: PLAN.at })
+test('the label comes from the organization type, then the tier: a Team seat with a max_5x tier is Premium', async ($, on) => {
+  const { clock, profile, file } = world(on)
+  const cases: [unknown, string | undefined][] = [
+    [{ organization: { organization_type: 'claude_team', rate_limit_tier: 'default_claude_max_5x' } }, 'Team (Premium)'],
+    [{ organization: { organization_type: 'claude_team', rate_limit_tier: 'default_claude_team' } }, 'Team (Standard)'],
+    [{ organization: { organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_20x' } }, 'Max (20x)'],
+    [{ organization: { organization_type: 'claude_max' } }, 'Max (5x)'],
+    [{ organization: { organization_type: 'claude_pro' } }, 'Pro'],
+    [{ organization: { organization_type: 'claude_free' } }, 'Free'],
+    [{ account: { has_claude_max: true } }, 'Max'], // no organization type: the account flag decides
+  ]
+  for (const [body, label] of cases) {
+    profile.body = body
+    await clock.advance(6 * 60 * 60_000) // past the plan's six hours, so it is asked for again
+    await $.session.start(start)
+    expect(file().plan?.label).toBe(label)
+  }
 })
 
 test('a plan is asked for again after six hours, and a failed call keeps the old one', async ($, on) => {
@@ -415,11 +427,11 @@ test('a plan is asked for again after six hours, and a failed call keeps the old
   expect(file().plan.label).toBe('Max (5x)')
 })
 
-test('without a tier the account flags and organization type name the plan', async ($, on) => {
+test('a Max organization without a tier is Max (5x), and no tier is written', async ($, on) => {
   const { profile, file } = world(on)
   profile.body = { account: { has_claude_max: true }, organization: { organization_type: 'claude_max', rate_limit_tier: null } }
   await $.session.start(start)
-  expect(file().plan).toEqual({ label: 'Max', at: '2026-10-03T18:00:00.000Z' })
+  expect(file().plan).toEqual({ label: 'Max (5x)', at: '2026-10-03T18:00:00.000Z' })
 })
 
 test('Pro, Team and Enterprise name themselves, and an unreadable profile writes no plan', async ($, on) => {

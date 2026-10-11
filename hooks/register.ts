@@ -40,7 +40,7 @@ const KNOWN_GRANTS: Record<string, { label: string; ends?: Grant['ends'] }> = {
 /** The weekly window's usage by surface (Claude Code, chat, ...). Rows pass through as given, unknown keys included. */
 type Breakdown = { windowStartedAt?: string; rows: { key: string; label?: string; percent: number }[]; at: string }
 
-/** The subscription plan. `label` is short (`Max (5x)`, `Max (20x)`, `Max`, `Pro`, `Team`, `Enterprise`); `tier` is Anthropic's `rate_limit_tier` as given, when it sent one. */
+/** The subscription plan. `label` is short (`Max (5x)`, `Max (20x)`, `Team (Premium)`, `Team (Standard)`, `Pro`, `Free`, `Enterprise`, or `Max` from the account flag alone); `tier` is Anthropic's `rate_limit_tier` as given, when it sent one. */
 type Plan = { label: string; tier?: string; at: string }
 
 /** The file, format version 1. `raw` is Anthropic's last response, unparsed; its shape is theirs. */
@@ -155,25 +155,30 @@ async function readPlan($: EngineInterface, prior: Plan | undefined, now: number
 }
 
 /**
- * A plan from the profile response. The organization type wins for Team and Enterprise (a Team seat carries a `..._max_5x` tier);
- * then the tier string (`..._max_5x` is `Max (5x)`, as the desktop app writes it); then the account's Max and Pro flags. Undefined when none says.
+ * A plan from the profile response, by organization type, then the tier within it. A Team Premium seat carries
+ * `default_claude_max_5x`, so that tier on a Team organization is Premium, and any other is Standard; a Max
+ * organization is 20x on `default_claude_max_20x`, else 5x. Another organization type reads Free. With no
+ * organization type at all, the account's Max and Pro flags decide, and with neither the plan is undefined.
  */
 function fromProfile(raw: any, at: string): Plan | undefined {
   const org = raw?.organization
   const tier = typeof org?.rate_limit_tier === 'string' && org.rate_limit_tier ? org.rate_limit_tier : undefined
-  const type = String(org?.organization_type ?? '').toLowerCase()
-  const max = /max[_-]?(\d+)/i.exec(tier ?? '')
+  const type = typeof org?.organization_type === 'string' ? org.organization_type : ''
   const label = type.includes('enterprise')
     ? 'Enterprise'
-    : type.includes('team')
-      ? 'Team'
-      : max
-        ? `Max (${max[1]}x)`
-        : raw?.account?.has_claude_max === true
-          ? 'Max'
-          : raw?.account?.has_claude_pro === true
-            ? 'Pro'
-            : undefined
+    : type === 'claude_team'
+      ? tier === 'default_claude_max_5x' ? 'Team (Premium)' : 'Team (Standard)'
+      : type === 'claude_max'
+        ? tier === 'default_claude_max_20x' ? 'Max (20x)' : 'Max (5x)'
+        : type === 'claude_pro'
+          ? 'Pro'
+          : type
+            ? 'Free'
+            : raw?.account?.has_claude_max === true
+              ? 'Max'
+              : raw?.account?.has_claude_pro === true
+                ? 'Pro'
+                : undefined
   return label ? { label, ...(tier ? { tier } : {}), at } : undefined
 }
 

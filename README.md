@@ -122,7 +122,7 @@ Format version 1. A reader should check `version` and stop if it is not one it k
 | `grants[].ends` | `reset` or `expiry`, saying which `endsAt` is. Absent when not known |
 | `grants[].at` | When the figures were read. Can be older than the file's `at` |
 | `plan` | The subscription plan, from Anthropic's profile endpoint, asked for at most every six hours. Absent with an API-key login, offline, or before the first successful call. Added in 0.6.0 |
-| `plan.label` | A short name to show: `Team` or `Enterprise` (from the organization type, which wins over the tier since a Team seat carries a max tier), else `Max (5x)`, `Max (20x)` (from the rate-limit tier, as the desktop app writes it), else `Max` or `Pro` |
+| `plan.label` | A short name to show, from the organization type and then the tier within it: `Team (Premium)` when a Team seat carries `default_claude_max_5x` (Premium seats do), else `Team (Standard)`; `Max (20x)` on `default_claude_max_20x`, else `Max (5x)`; `Pro`; `Enterprise`; `Free` for any other organization type. With no organization type, `Max` or `Pro` from the account's flags. Changed in 0.6.2: 0.6.1 wrote `Team` for every Team seat and `Max` for a Max organization with no tier |
 | `plan.tier` | Anthropic's `rate_limit_tier` as sent, when it sent one |
 | `plan.at` | When the plan was read |
 | `weeklyBreakdown` | The weekly window's usage split by surface, account-wide (claude.ai chat included). Absent when Anthropic's response does not carry it |
