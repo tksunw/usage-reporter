@@ -397,6 +397,13 @@ test('the plan comes from the profile: the tier names Max (5x), and it is asked 
   expect(file().plan.label).toBe('Max (5x)')
 })
 
+test('a Team seat reads Team even though its tier says max_5x', async ($, on) => {
+  const { profile, file } = world(on)
+  profile.body = { organization: { organization_type: 'claude_team', rate_limit_tier: 'default_claude_max_5x' } }
+  await $.session.start(start)
+  expect(file().plan).toEqual({ label: 'Team', tier: 'default_claude_max_5x', at: PLAN.at })
+})
+
 test('a plan is asked for again after six hours, and a failed call keeps the old one', async ($, on) => {
   const { clock, profiles, profile, file } = world(on)
   await $.session.start(start)

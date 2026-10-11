@@ -155,20 +155,20 @@ async function readPlan($: EngineInterface, prior: Plan | undefined, now: number
 }
 
 /**
- * A plan from the profile response. The tier string wins (`..._max_5x` is `Max (5x)`, as the desktop app writes it); then the
- * organization type for Team and Enterprise; then the account's Max and Pro flags. Undefined when none says.
+ * A plan from the profile response. The organization type wins for Team and Enterprise (a Team seat carries a `..._max_5x` tier);
+ * then the tier string (`..._max_5x` is `Max (5x)`, as the desktop app writes it); then the account's Max and Pro flags. Undefined when none says.
  */
 function fromProfile(raw: any, at: string): Plan | undefined {
   const org = raw?.organization
   const tier = typeof org?.rate_limit_tier === 'string' && org.rate_limit_tier ? org.rate_limit_tier : undefined
   const type = String(org?.organization_type ?? '').toLowerCase()
   const max = /max[_-]?(\d+)/i.exec(tier ?? '')
-  const label = max
-    ? `Max (${max[1]}x)`
-    : type.includes('enterprise')
-      ? 'Enterprise'
-      : type.includes('team')
-        ? 'Team'
+  const label = type.includes('enterprise')
+    ? 'Enterprise'
+    : type.includes('team')
+      ? 'Team'
+      : max
+        ? `Max (${max[1]}x)`
         : raw?.account?.has_claude_max === true
           ? 'Max'
           : raw?.account?.has_claude_pro === true
