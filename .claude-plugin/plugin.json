@@ -1,6 +1,6 @@
 {
   "name": "usage-reporter",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "Writes your Claude usage limits and credits to ~/.claude/usage-reporter/usage.json so other tools can read them",
   "author": { "name": "Tim Kennedy" },
   "license": "MIT"

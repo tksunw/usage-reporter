@@ -6,6 +6,8 @@ const ENDPOINT = 'https://api.anthropic.com/api/oauth/usage'
 const FILE = '.claude/usage-reporter/usage.json'
 const FLOOR_MS = 5 * 60_000 // the endpoint rate-limits; one call per five minutes across all sessions
 const BACKOFF_MS = 10 * 60_000 // after a 429
+const PROFILE_ENDPOINT = 'https://api.anthropic.com/api/oauth/profile'
+const PLAN_TTL_MS = 6 * 60 * 60_000 // a plan changes rarely; ask again after six hours
 
 /** One usage window. A weekly window with a `label` is scoped to that model family. */
 type Window = { kind: 'session' | 'weekly'; label?: string; percent: number; resetsAt?: string; at: string }
@@ -38,6 +40,9 @@ const KNOWN_GRANTS: Record<string, { label: string; ends?: Grant['ends'] }> = {
 /** The weekly window's usage by surface (Claude Code, chat, ...). Rows pass through as given, unknown keys included. */
 type Breakdown = { windowStartedAt?: string; rows: { key: string; label?: string; percent: number }[]; at: string }
 
+/** The subscription plan. `label` is short (`Max (5x)`, `Max (20x)`, `Max`, `Pro`, `Team`, `Enterprise`); `tier` is Anthropic's `rate_limit_tier` as given, when it sent one. */
+type Plan = { label: string; tier?: string; at: string }
+
 /** The file, format version 1. `raw` is Anthropic's last response, unparsed; its shape is theirs. */
 type Report = {
   version: 1
@@ -48,6 +53,7 @@ type Report = {
   projectSetupCredit?: SetupCredit
   grants?: Grant[]
   weeklyBreakdown?: Breakdown
+  plan?: Plan
   raw?: unknown
 }
 
@@ -79,7 +85,10 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
   const path = `${home}/${FILE}`
   const now = await $.clock.now()
   const at = new Date(now).toISOString()
-  const write = (rest: Omit<Report, 'version' | 'at'>) => $.fs.write(path, JSON.stringify({ version: 1, at, ...rest } satisfies Report))
+  const last = await $.fs.read(path).then(text => JSON.parse(text) as Partial<Report>, () => ({}) as Partial<Report>)
+  const prior = last.version === 1 ? last : ({} as Partial<Report>)
+  const plan = await readPlan($, prior.plan, now, at)
+  const write = (rest: Omit<Report, 'version' | 'at' | 'plan'>) => $.fs.write(path, JSON.stringify({ version: 1, at, plan, ...rest } satisfies Report))
 
   if (now >= Number((await $.store.get('nextFetchAt')) ?? 0)) {
     // Claim the slot before the call so a second session starting now skips it.
@@ -122,9 +131,50 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
   // With none (an Enterprise login), the last report stands as is.
   const latest = fromRateLimits(rateLimits ?? (await $.session.usage()).rateLimits, at)
   if (latest.length === 0) return
-  const last = await $.fs.read(path).then(text => JSON.parse(text) as Partial<Report>, () => ({}) as Partial<Report>)
-  const { windows = [], credits, cloudSessionCredits, projectSetupCredit, grants, weeklyBreakdown } = last.version === 1 ? last : ({} as Partial<Report>)
-  await write({ windows: merge(windows, latest), credits, cloudSessionCredits, projectSetupCredit, grants, weeklyBreakdown, raw: last.raw })
+  const { windows = [], credits, cloudSessionCredits, projectSetupCredit, grants, weeklyBreakdown } = prior
+  await write({ windows: merge(windows, latest), credits, cloudSessionCredits, projectSetupCredit, grants, weeklyBreakdown, raw: prior.raw })
+}
+
+/**
+ * The plan: the last report's while it is fresh, else one profile call (at most one per five minutes
+ * across sessions, claimed before the call). A miss keeps the old plan rather than dropping it, so an
+ * API-key login or an offline start leaves `plan` as it was, or absent.
+ */
+async function readPlan($: EngineInterface, prior: Plan | undefined, now: number, at: string): Promise<Plan | undefined> {
+  const fresh = prior && now - Date.parse(prior.at) < PLAN_TTL_MS
+  if (fresh || now < Number((await $.store.get('nextPlanAt')) ?? 0)) return prior
+  await $.store.set('nextPlanAt', now + FLOOR_MS)
+  try {
+    const auth = await $.session.authorize()
+    if (auth?.kind !== 'bearer') return prior
+    const res = await $.http.fetch(PROFILE_ENDPOINT, { headers: { 'anthropic-beta': 'oauth-2025-04-20' }, auth: auth.handle })
+    return res.ok ? (fromProfile(JSON.parse(res.text), at) ?? prior) : prior
+  } catch {
+    return prior
+  }
+}
+
+/**
+ * A plan from the profile response. The tier string wins (`..._max_5x` is `Max (5x)`, as the desktop app writes it); then the
+ * organization type for Team and Enterprise; then the account's Max and Pro flags. Undefined when none says.
+ */
+function fromProfile(raw: any, at: string): Plan | undefined {
+  const org = raw?.organization
+  const tier = typeof org?.rate_limit_tier === 'string' && org.rate_limit_tier ? org.rate_limit_tier : undefined
+  const type = String(org?.organization_type ?? '').toLowerCase()
+  const max = /max[_-]?(\d+)/i.exec(tier ?? '')
+  const label = max
+    ? `Max (${max[1]}x)`
+    : type.includes('enterprise')
+      ? 'Enterprise'
+      : type.includes('team')
+        ? 'Team'
+        : raw?.account?.has_claude_max === true
+          ? 'Max'
+          : raw?.account?.has_claude_pro === true
+            ? 'Pro'
+            : undefined
+  return label ? { label, ...(tier ? { tier } : {}), at } : undefined
 }
 
 /** The usage response: `limits[]` when present, else the older `five_hour` / `seven_day` objects. */

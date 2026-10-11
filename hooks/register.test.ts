@@ -58,10 +58,18 @@ const ENTERPRISE = {
   seven_day_breakdown: null,
 }
 
+// The profile response, as far as the mod reads it.
+const PLAN = { label: 'Max (5x)', tier: 'default_claude_max_5x', at: '2026-10-03T18:00:00.000Z' }
+const PROFILE = {
+  account: { has_claude_max: true, has_claude_pro: false },
+  organization: { organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_5x' },
+}
+
 // The world beneath the mod: a clock, a store, HOME, a file, and an endpoint that answers `reply`.
 function world(on: On, status = 200, body: unknown = USAGE, env: Record<string, string> = { HOME: '/home/t' }) {
   const reply = { status, body }
-  const seen = { fetches: [] as unknown[], writes: [] as { path: string; text: string }[] }
+  const profile = { status: 200, body: PROFILE as unknown }
+  const seen = { fetches: [] as unknown[], profiles: [] as unknown[], writes: [] as { path: string; text: string }[] }
   mock.env(on, env)
   mock.store(on)
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 3, 18) })
@@ -70,6 +78,10 @@ function world(on: On, status = 200, body: unknown = USAGE, env: Record<string, 
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('session.authorize', () => ({ value: { handle: 'h', kind: 'bearer' as const } }))
   on('http.fetch', (_$, e) => {
+    if (e.url.endsWith('/api/oauth/profile')) {
+      seen.profiles.push(e)
+      return { value: { status: profile.status, ok: profile.status === 200, headers: {}, text: JSON.stringify(profile.body) } }
+    }
     seen.fetches.push(e)
     return { value: { status: reply.status, ok: reply.status === 200, headers: {}, text: JSON.stringify(reply.body) } }
   })
@@ -82,7 +94,7 @@ function world(on: On, status = 200, body: unknown = USAGE, env: Record<string, 
     return last ? { value: last.text } : { deny: 'ENOENT' }
   })
   const file = () => JSON.parse(seen.writes.at(-1)!.text)
-  return { clock, file, reply, ...seen }
+  return { clock, file, reply, profile, ...seen }
 }
 
 const TURN = { answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' as const }
@@ -100,6 +112,7 @@ test('session start writes the windows in format 1, asked for with the session c
   expect(file()).toEqual({
     version: 1,
     at,
+    plan: PLAN,
     windows: [
       { kind: 'session', percent: 71, resetsAt: '2026-10-03T19:50:00.902Z', at },
       { kind: 'weekly', percent: 20, resetsAt: '2026-10-04T23:00:00.902Z', at },
@@ -326,6 +339,7 @@ test('an Enterprise login, with no windows anywhere, writes its spend budget and
   expect(file()).toEqual({
     version: 1,
     at: '2026-10-03T18:00:00.000Z',
+    plan: PLAN,
     windows: [],
     credits,
     grants: [{ id: 'extra_usage', label: 'Extra usage', used: 24.68, limit: 800, currency: 'USD', at: credits.at }],
@@ -366,5 +380,51 @@ test('an Enterprise login with no budget in the response still writes an empty r
   const { file } = world(on, 200, { ...ENTERPRISE, spend: null, extra_usage: null })
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits: [], cost: { usd: 0 } } }))
   await $.session.start(start)
-  expect(file()).toEqual({ version: 1, at: '2026-10-03T18:00:00.000Z', windows: [], raw: { ...ENTERPRISE, spend: null, extra_usage: null } })
+  expect(file()).toEqual({ version: 1, at: '2026-10-03T18:00:00.000Z', plan: PLAN, windows: [], raw: { ...ENTERPRISE, spend: null, extra_usage: null } })
+})
+
+test('the plan comes from the profile: the tier names Max (5x), and it is asked for once while fresh', async ($, on) => {
+  const { clock, profiles, file } = world(on)
+  await $.session.start(start)
+
+  expect(profiles).toHaveLength(1)
+  expect(JSON.stringify(profiles[0])).toContain('"auth":"h"')
+  expect(file().plan).toEqual(PLAN)
+
+  await clock.advance(10 * 60_000)
+  await $.turn.complete(TURN)
+  expect(profiles).toHaveLength(1) // six hours not up: the last plan stands
+  expect(file().plan.label).toBe('Max (5x)')
+})
+
+test('a plan is asked for again after six hours, and a failed call keeps the old one', async ($, on) => {
+  const { clock, profiles, profile, file } = world(on)
+  await $.session.start(start)
+
+  await clock.advance(7 * 60 * 60_000)
+  profile.status = 403
+  await $.turn.complete(TURN)
+  expect(profiles).toHaveLength(2)
+  expect(file().plan.label).toBe('Max (5x)')
+})
+
+test('without a tier the account flags and organization type name the plan', async ($, on) => {
+  const { profile, file } = world(on)
+  profile.body = { account: { has_claude_max: true }, organization: { organization_type: 'claude_max', rate_limit_tier: null } }
+  await $.session.start(start)
+  expect(file().plan).toEqual({ label: 'Max', at: '2026-10-03T18:00:00.000Z' })
+})
+
+test('Pro, Team and Enterprise name themselves, and an unreadable profile writes no plan', async ($, on) => {
+  const pro = world(on)
+  pro.profile.body = { account: { has_claude_pro: true }, organization: { organization_type: 'claude_pro' } }
+  await $.session.start(start)
+  expect(pro.file().plan.label).toBe('Pro')
+})
+
+test('a failed profile call with no earlier plan leaves plan out', async ($, on) => {
+  const { profile, file } = world(on)
+  profile.status = 403
+  await $.session.start(start)
+  expect(file()).not.toHaveProperty('plan')
 })
