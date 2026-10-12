@@ -383,6 +383,43 @@ test('an Enterprise login with no budget in the response still writes an empty r
   expect(file()).toEqual({ version: 1, at: '2026-10-03T18:00:00.000Z', plan: PLAN, windows: [], raw: { ...ENTERPRISE, spend: null, extra_usage: null } })
 })
 
+test('a windowless login inside the usage floor still keeps a plan fetched on that start', async ($, on) => {
+  const { clock, fetches, profiles, profile, file, writes, reply } = world(on, 200, ENTERPRISE)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits: [], cost: { usd: 0 } } }))
+  profile.status = 403
+  await $.session.start(start)
+  expect(file()).not.toHaveProperty('plan')
+  const before = file()
+
+  // A 429 pushes the usage slot to ten minutes while the plan slot lapses at five.
+  reply.status = 429
+  await clock.advance(5 * 60_000)
+  await $.session.start(start)
+  expect(fetches).toHaveLength(2)
+  expect(profiles).toHaveLength(2)
+
+  profile.status = 200
+  profile.body = { organization: { organization_type: 'claude_enterprise' } }
+  await clock.advance(5 * 60_000)
+  await $.session.start(start)
+  expect(fetches).toHaveLength(2) // usage slot still closed
+  expect(profiles).toHaveLength(3)
+  expect(file().plan.label).toBe('Enterprise')
+  expect(file().windows).toEqual([])
+  expect(file().credits).toEqual(before.credits)
+  expect(file().grants).toEqual(before.grants)
+  expect(file().raw).toEqual(before.raw)
+
+  // Plan fresh now: nothing to add, nothing written.
+  const count = writes.length
+  const text = writes.at(-1)!.text
+  await clock.advance(60_000)
+  await $.session.start(start)
+  expect(profiles).toHaveLength(3)
+  expect(writes).toHaveLength(count)
+  expect(writes.at(-1)!.text).toBe(text)
+})
+
 test('the plan comes from the profile: the tier names Max (5x), and it is asked for once while fresh', async ($, on) => {
   const { clock, profiles, file } = world(on)
   await $.session.start(start)

@@ -128,10 +128,14 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
 
   // Inside the floor, or the call failed: the session and weekly percent Claude Code already holds
   // for its status line, merged into the last report so the model-scoped windows and credits stay.
-  // With none (an Enterprise login), the last report stands as is.
+  // With none (an Enterprise login), the last report stands, except that a plan fetched just now is
+  // still written: its slot in the store is already spent.
   const latest = fromRateLimits(rateLimits ?? (await $.session.usage()).rateLimits, at)
-  if (latest.length === 0) return
   const { windows = [], credits, cloudSessionCredits, projectSetupCredit, grants, weeklyBreakdown } = prior
+  if (latest.length === 0) {
+    if (plan !== prior.plan) await write({ windows, credits, cloudSessionCredits, projectSetupCredit, grants, weeklyBreakdown, raw: prior.raw })
+    return
+  }
   await write({ windows: merge(windows, latest), credits, cloudSessionCredits, projectSetupCredit, grants, weeklyBreakdown, raw: prior.raw })
 }
 
