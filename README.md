@@ -152,7 +152,7 @@ Only while a Claude Code session is running. Nothing runs on a timer.
 - Between those calls it writes the session and weekly percent Claude Code already holds for its status line, merged into the last report. No request is made for those. Model-scoped windows, `credits`, `cloudSessionCredits`, `projectSetupCredit`, `grants`, and `weeklyBreakdown` come only from the endpoint, so they carry over unchanged until the next call.
 - The status line figures trail the endpoint by about a point, so inside one window a lower reading never replaces a higher one.
 
-So session and weekly follow each turn, and model-scoped windows and credits update at most every five minutes. Usage from claude.ai chat or Claude Desktop shows up at the next Claude Code turn.
+So session and weekly follow each turn, and model-scoped windows and credits update at most every five minutes. Usage from claude.ai chat or Claude Desktop shows up at the next Claude Code turn. A reader that wants the file fresher between sessions can start a session of its own with only the mod loaded (`claude --setting-sources "" --plugin-dir <mod> --tools ""`, no prompt) and end it once the report lands; the session-start call runs the same way, inside the same floor. Tokenometer does this.
 
 ## What it touches
 
