@@ -90,7 +90,10 @@ async function report($: EngineInterface, rateLimits?: readonly SessionRateLimit
   const plan = await readPlan($, prior.plan, now, at)
   const write = (rest: Omit<Report, 'version' | 'at' | 'plan'>) => $.fs.write(path, JSON.stringify({ version: 1, at, plan, ...rest } satisfies Report))
 
-  if (now >= Number((await $.store.get('nextFetchAt')) ?? 0)) {
+  // A plan that just appeared on a file without one is an upgrade from an older mod: skip the floor
+  // once so the fields that version never wrote arrive now. Self-limiting, since the next read has a plan.
+  const newPlan = prior.plan === undefined && plan !== undefined
+  if (newPlan || now >= Number((await $.store.get('nextFetchAt')) ?? 0)) {
     // Claim the slot before the call so a second session starting now skips it.
     await $.store.set('nextFetchAt', now + FLOOR_MS)
     try {

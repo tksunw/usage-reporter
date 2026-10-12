@@ -150,6 +150,7 @@ Only while a Claude Code session is running. Nothing runs on a timer.
 
 - On session start, whenever Claude Code reports that a limit moved, and at the end of a turn once five minutes have passed since the last call, the mod has Claude Code call Anthropic's usage endpoint. At most one call per five minutes across all open sessions, ten minutes after a 429.
 - Between those calls it writes the session and weekly percent Claude Code already holds for its status line, merged into the last report. No request is made for those. Model-scoped windows, `credits`, `cloudSessionCredits`, `projectSetupCredit`, `grants`, and `weeklyBreakdown` come only from the endpoint, so they carry over unchanged until the next call.
+- The first time a plan lands on a file that had none (an update from an older version, or a first run), the usage call also goes out at once rather than waiting out the five minutes, so the fields the older version never wrote appear with it. Once the file has a plan this does not repeat.
 - The status line figures trail the endpoint by about a point, so inside one window a lower reading never replaces a higher one.
 - The plan is read from the profile endpoint at most every six hours. When a call lands while the usage call is skipped or fails and the status line has no figures (an Enterprise login), the file is rewritten with the last report unchanged except for `plan` and `at`.
 

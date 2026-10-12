@@ -402,7 +402,7 @@ test('a windowless login inside the usage floor still keeps a plan fetched on th
   profile.body = { organization: { organization_type: 'claude_enterprise' } }
   await clock.advance(5 * 60_000)
   await $.session.start(start)
-  expect(fetches).toHaveLength(2) // usage slot still closed
+  expect(fetches).toHaveLength(3) // the new plan skips the floor once; the call 429s, so the merge path must keep the plan
   expect(profiles).toHaveLength(3)
   expect(file().plan.label).toBe('Enterprise')
   expect(file().windows).toEqual([])
@@ -418,6 +418,33 @@ test('a windowless login inside the usage floor still keeps a plan fetched on th
   expect(profiles).toHaveLength(3)
   expect(writes).toHaveLength(count)
   expect(writes.at(-1)!.text).toBe(text)
+})
+
+test('a plan appearing on a file without one skips the usage floor once', async ($, on) => {
+  const { clock, fetches, profile, reply, file } = world(on)
+  profile.status = 403
+  await $.session.start(start)
+  expect(file()).not.toHaveProperty('plan')
+
+  // A 429 pushes the usage slot to ten minutes while the plan slot lapses at five.
+  reply.status = 429
+  await clock.advance(5 * 60_000)
+  await $.session.start(start)
+  expect(fetches).toHaveLength(2)
+
+  // Plan slot open, usage slot closed: the plan arrives and the usage call goes out anyway.
+  profile.status = 200
+  reply.status = 200
+  await clock.advance(5 * 60_000)
+  await $.session.start(start)
+  expect(file().plan.label).toBe('Max (5x)')
+  expect(fetches).toHaveLength(3)
+  expect(file().at).toBe('2026-10-03T18:10:00.000Z')
+
+  // The file has a plan now: inside the floor there is no further fetch.
+  await clock.advance(60_000)
+  await $.session.start(start)
+  expect(fetches).toHaveLength(3)
 })
 
 test('the plan comes from the profile: the tier names Max (5x), and it is asked for once while fresh', async ($, on) => {
