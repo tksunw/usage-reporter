@@ -37,10 +37,10 @@ const KNOWN_GRANTS: Record<string, { label: string; ends?: Grant['ends'] }> = {
   harbor_lantern: { label: 'Project setup', ends: 'expiry' },
 }
 
-/** The weekly window's usage by surface (Claude Code, chat, ...). Rows pass through as given, unknown keys included. */
+/** This week's usage by surface (Claude Code, chat, Duet, ...), each row's `percent` a share of the week's total. Rows pass through as given, unknown keys included. */
 type Breakdown = { windowStartedAt?: string; rows: { key: string; label?: string; percent: number }[]; at: string }
 
-/** The subscription plan. `label` is short (`Max (5x)`, `Max (20x)`, `Team (Premium)`, `Team (Standard)`, `Pro`, `Free`, `Enterprise`, or `Max` from the account flag alone); `tier` is Anthropic's `rate_limit_tier` as given, when it sent one. */
+/** The subscription plan. `label` is short (`Max`, `Ultra`, `Team (Premium)`, `Team (Standard)`, `Pro`, `Free`, `Enterprise`, or `Max` from the account flag alone); `tier` is Anthropic's `rate_limit_tier` as given, when it sent one. */
 type Plan = { label: string; tier?: string; at: string }
 
 /** The file, format version 1. `raw` is Anthropic's last response, unparsed; its shape is theirs. */
@@ -164,7 +164,8 @@ async function readPlan($: EngineInterface, prior: Plan | undefined, now: number
 /**
  * A plan from the profile response, by organization type, then the tier within it. A Team Premium seat carries
  * `default_claude_max_5x`, so that tier on a Team organization is Premium, and any other is Standard; a Max
- * organization is 20x on `default_claude_max_20x`, else 5x. Another organization type reads Free. With no
+ * organization is Ultra (Anthropic's name for the former Max 20x since 2026-10) on `default_claude_max_20x`, else
+ * Max (the former Max 5x). The tier strings did not change with the names. Another organization type reads Free. With no
  * organization type at all, the account's Max and Pro flags decide, and with neither the plan is undefined.
  */
 function fromProfile(raw: any, at: string): Plan | undefined {
@@ -176,7 +177,7 @@ function fromProfile(raw: any, at: string): Plan | undefined {
     : type === 'claude_team'
       ? tier === 'default_claude_max_5x' ? 'Team (Premium)' : 'Team (Standard)'
       : type === 'claude_max'
-        ? tier === 'default_claude_max_20x' ? 'Max (20x)' : 'Max (5x)'
+        ? tier === 'default_claude_max_20x' ? 'Ultra' : 'Max'
         : type === 'claude_pro'
           ? 'Pro'
           : type

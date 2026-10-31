@@ -122,19 +122,19 @@ Format version 1. A reader should check `version` and stop if it is not one it k
 | `grants[].ends` | `reset` or `expiry`, saying which `endsAt` is. Absent when not known |
 | `grants[].at` | When the figures were read. Can be older than the file's `at` |
 | `plan` | The subscription plan, from Anthropic's profile endpoint, asked for at most every six hours. Absent with an API-key login, offline, or before the first successful call. Added in 0.6.0 |
-| `plan.label` | A short name to show, from the organization type and then the tier within it: `Team (Premium)` when a Team seat carries `default_claude_max_5x` (Premium seats do), else `Team (Standard)`; `Max (20x)` on `default_claude_max_20x`, else `Max (5x)`; `Pro`; `Enterprise`; `Free` for any other organization type. With no organization type, `Max` or `Pro` from the account's flags. Changed in 0.6.2: 0.6.1 wrote `Team` for every Team seat and `Max` for a Max organization with no tier |
+| `plan.label` | A short name to show, from the organization type and then the tier within it: `Team (Premium)` when a Team seat carries `default_claude_max_5x` (Premium seats do), else `Team (Standard)`; `Ultra` on `default_claude_max_20x`, else `Max`; `Pro`; `Enterprise`; `Free` for any other organization type. With no organization type, `Max` or `Pro` from the account's flags. Changed in 0.7.0 to follow Anthropic's renaming of Max 5x to Max and Max 20x to Ultra: 0.6.x wrote `Max (5x)` and `Max (20x)` (the tier strings did not change). Changed in 0.6.2: 0.6.1 wrote `Team` for every Team seat and `Max` for a Max organization with no tier |
 | `plan.tier` | Anthropic's `rate_limit_tier` as sent, when it sent one |
 | `plan.at` | When the plan was read |
-| `weeklyBreakdown` | The weekly window's usage split by surface, account-wide (claude.ai chat included). Absent when Anthropic's response does not carry it |
+| `weeklyBreakdown` | This week's usage split by surface, account-wide (claude.ai chat, Cowork, and Duet included). Absent when Anthropic's response does not carry it |
 | `weeklyBreakdown.windowStartedAt` | When the weekly window began, ISO 8601 UTC. Can be absent |
 | `weeklyBreakdown.rows[]` | One entry per surface, in Anthropic's order. Keys not listed here are passed through; show them rather than dropping them |
-| `weeklyBreakdown.rows[].key` | Surface id. Seen: `claude_code`, `chat`, `cowork`, `other` |
+| `weeklyBreakdown.rows[].key` | Surface id. Seen: `claude_code`, `chat`, `cowork`, `claude_duet`, `other` |
 | `weeklyBreakdown.rows[].label` | Anthropic's display name, for example `Chats`. Can be absent |
-| `weeklyBreakdown.rows[].percent` | See below. Not the percent of the weekly limit |
+| `weeklyBreakdown.rows[].percent` | The surface's share of this week's usage. Rows sum to 100. Not the percent of the weekly limit |
 | `weeklyBreakdown.at` | When the figures were read. Can be older than the file's `at` |
 | `raw` | Anthropic's last usage response, unparsed, for debugging. Its shape is theirs and changes without notice. Do not build on it |
 
-What `weeklyBreakdown.rows[].percent` measures is not settled. Every reading so far had one non-zero row, `claude_code` at 100, while the weekly window stood at 20% and later 43%. So it is not the weekly percent, and it fits "share of this week's usage, rows summing to 100", but no reading with two non-zero rows has confirmed that. Treat it as a relative share until one does.
+`weeklyBreakdown.rows[].percent` is a relative share, not a percent of the weekly limit. A 2026-10-31 reading had `claude_code` 23, `cowork` 3, `claude_duet` 74, and the rest 0, summing to 100 while the weekly window stood at 1%. To show a surface against the weekly limit, multiply its share by the weekly window's `percent`.
 
 A window whose `resetsAt` has passed has rolled over; treat it as empty until the next report.
 
